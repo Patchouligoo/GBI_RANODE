@@ -1,0 +1,3 @@
+[submodule "submodules/RANODE"]
+	path = submodules/RANODE
+	url = git@github.com:Patchouligoo/R-ANODE.git
