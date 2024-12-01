@@ -18,6 +18,9 @@ action() {
     # define output directory
     export OUTPUT_DIR="/pscratch/sd/m/mukyu/SBI_RANODE"
 
+    # define data directory
+    export DATA_DIR="${this_dir}/data/lhco"
+
     # add submodules to the path
     export RANODE="${this_dir}/submodules/RANODE/src"
 
