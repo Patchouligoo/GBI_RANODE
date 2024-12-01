@@ -30,3 +30,11 @@ class BaseTask(law.Task):
 
     def local_directory_target(self, *path, **kwargs):
         return law.LocalDirectoryTarget(self.local_path(*path), **kwargs)
+
+
+class SignalNumberMixin:
+
+    n_sig = luigi.IntParameter(default=1000)
+
+    def store_parts(self):
+        return super().store_parts() + (f"n_sig_{self.n_sig}",)
