@@ -17,6 +17,12 @@ action() {
 
     # define output directory
     export OUTPUT_DIR="/pscratch/sd/m/mukyu/SBI_RANODE"
+    mkdir -p $OUTPUT_DIR
+
+    # define scratch directory
+    export SCRATCH_DIR="/pscratch/sd/m/mukyu/SBI_RANODE/scratch"
+    # create if not exist
+    mkdir -p $SCRATCH_DIR
 
     # define data directory
     export DATA_DIR="${this_dir}/data/lhco"
