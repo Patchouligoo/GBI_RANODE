@@ -20,7 +20,7 @@ class BkgTemplateTraining(
     epochs = luigi.IntParameter(default=200)
 
     def requires(self):
-        return Preprocessing(self)
+        return Preprocessing.req(self)
     
     def output(self):
         return {

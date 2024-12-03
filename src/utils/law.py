@@ -10,7 +10,7 @@ class BaseTask(law.Task):
     Base task which provides some convenience methods
     """
 
-    version = law.Parameter(default="dev")
+    version = law.Parameter()
 
     def store_parts(self):
         task_name = self.__class__.__name__
