@@ -87,7 +87,7 @@ class BkgTemplateTraining(
         # save trainings and validation losses
         trainloss_list=np.array(trainloss_list)
         valloss_list=np.array(valloss_list)
-        self.output()["bkg_models"].parent.touch()
+        self.output()["trainloss_list"].parent.touch()
         np.save(self.output()["trainloss_list"].path, trainloss_list)
         np.save(self.output()["valloss_list"].path, valloss_list)
 
@@ -95,5 +95,5 @@ class BkgTemplateTraining(
         best_models = np.argsort(valloss_list)[:10]
         for i in range(10):
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
-            os.rename(scrath_path+'model_B/model_CR_'+str(best_models[i])+'.pt', self.output()["bkg_models"][i].path)
+            os.rename(scrath_path+'/model_B/model_CR_'+str(best_models[i])+'.pt', self.output()["bkg_models"][i].path)
 
