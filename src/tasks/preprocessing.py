@@ -32,7 +32,8 @@ class Preprocessing(
             "SR_mass_bins": self.local_target("SR_mass_bins.npy"),
             "pre_parameters": self.local_target("pre_parameters.pkl"),
         }
-    
+
+    @law.decorator.safe_output 
     def run(self):
         
         data_dir = os.environ.get("DATA_DIR")

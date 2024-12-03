@@ -29,6 +29,7 @@ class BkgTemplateTraining(
             "valloss_list": self.local_target("valloss_list.npy"),
         }
     
+    @law.decorator.safe_output 
     def run(self):
 
         # need:
