@@ -66,7 +66,7 @@ class Preprocessing(
         np.save(self.output()["data_val_CR"].path, data_val_CR)
 
         # ----------------------- process training data in SR -----------------------
-        mass = SR_data[:,0]
+        mass = SR_data[SR_data[:,-1]==0,0]
         bins = np.linspace(3.3, 3.7, 50)
         hist_back = np.histogram(mass, bins=bins, density=True)
         # save mass histogram and bins
