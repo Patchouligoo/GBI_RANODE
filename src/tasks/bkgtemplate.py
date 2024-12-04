@@ -97,3 +97,164 @@ class BkgTemplateTraining(
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
             os.rename(scrath_path+'/model_B/model_CR_'+str(best_models[i])+'.pt', self.output()["bkg_models"][i].path)
 
+
+class BkgTemplateChecking(
+    SignalNumberMixin,
+    BaseTask, 
+):
+    
+    device = luigi.Parameter(default="cuda")
+    num_CR_samples = luigi.IntParameter(default=100000)
+    
+    def requires(self):
+        return {
+            "bkg_models": BkgTemplateTraining.req(self),
+            "preprocessed_data": Preprocessing.req(self),
+        }
+    
+    def output(self):
+        return {
+            "loss_plot": self.local_target("loss_plot.pdf"),
+            "CR_comparison_plot": self.local_target("CR_comparison_plots.pdf"),
+            "SR_comparison_plot": self.local_target("SR_comparison_plots.pdf"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        # ----------------------------------- plot loss -----------------------------------
+        self.output()['loss_plot'].parent.touch()
+        train_loss = np.load(self.input()["bkg_models"]["trainloss_list"].path)
+        val_loss = np.load(self.input()["bkg_models"]["valloss_list"].path)
+        f = plt.figure()
+        plt.plot(train_loss, label='train loss')
+        plt.plot(val_loss, label='val loss')
+        plt.legend()
+        plt.xlabel('epoch')
+        plt.ylabel('loss')
+        plt.title('Training and validation loss')
+        f.savefig(self.output()["loss_plot"].path)
+
+        # ----------------------------------- load model --------------------------------
+        # define model 
+        ranode_path = os.environ.get("RANODE")
+        sys.path.append(ranode_path)
+        # from utils import inverse_transform
+        # load the models
+        from density_estimator import DensityEstimator
+        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
+        model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
+        best_model_dir = self.input()["bkg_models"]["bkg_models"][0].path
+        model_B.model.load_state_dict(torch.load(best_model_dir))
+        model_B.model.to(self.device)
+        model_B.model.eval()
+
+        # -------------------------------- CR comparison plots --------------------------------
+        # load the sample to compare with
+        data_train_CR = np.load(self.input()["preprocessed_data"]["data_train_CR"].path)
+
+        # generate CR events using the model with condition from data_train_CR
+        mass_cond_CR = torch.from_numpy(data_train_CR[:,0]).reshape((-1, 1)).type(torch.FloatTensor).to(self.device)
+        mass_cond_CR = mass_cond_CR[:self.num_CR_samples]
+
+        with torch.no_grad():
+            sampled_CR_events = model_B.model.sample(num_samples=len(mass_cond_CR), cond_inputs=mass_cond_CR)
+
+        sampled_CR_events = sampled_CR_events.cpu().numpy().astype('float32')
+
+        # plot the comparison
+        with PdfPages(self.output()["CR_comparison_plot"].path) as pdf:
+            # first plot the mass distribution
+            mass_cond_CR = mass_cond_CR.cpu().numpy().reshape(-1).astype('float32')
+            f = plt.figure()
+            plt.hist(mass_cond_CR, bins=100, histtype='step', label='mass condition CR')
+            plt.xlabel('mass')
+            plt.ylabel('counts')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+            # then plot the rest of the variables
+            for i in range(len(sampled_CR_events[0])):
+                bins = np.linspace(data_train_CR[:,i+1].min(), data_train_CR[:,i+1].max(), 100)
+                f = plt.figure()
+                plt.hist(data_train_CR[:self.num_CR_samples,i+1], bins=bins, histtype='step', label='data_train_CR')
+                plt.hist(sampled_CR_events[:,i], bins=bins, histtype='step', label='sampled CR events')
+                plt.xlabel(f'var {i}')
+                plt.ylabel('counts')
+                plt.legend()
+                pdf.savefig(f)
+                plt.close(f)
+
+        # -------------------------------- SR comparison plots --------------------------------
+        # we load 10 model_Bs
+        model_Bs = []
+        for i in range(10):
+            model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
+            best_model_dir = self.input()["bkg_models"]["bkg_models"][i].path
+            model_B.model.load_state_dict(torch.load(best_model_dir))
+            model_B.model.to(self.device)
+            model_B.model.eval()
+            model_Bs.append(model_B)
+
+
+        # load the sample to compare with
+        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path) # with background only
+        SR_mass_hist = np.load(self.input()["preprocessed_data"]["SR_mass_hist"].path)
+        SR_mass_bins = np.load(self.input()["preprocessed_data"]["SR_mass_bins"].path)
+
+        # generate SR events using the model with condition from data_train_SR_B
+        mass_cond_SR = data_train_SR_B[:,0]
+        density_hist = rv_histogram((SR_mass_hist, SR_mass_bins))
+        
+        uniform_mass_SR = np.linspace(SR_mass_bins.min(), SR_mass_bins.max(), len(mass_cond_SR))
+        uniform_mass_SR_weights = density_hist.pdf(uniform_mass_SR)
+        uniform_mass_SR_weights = uniform_mass_SR_weights / uniform_mass_SR_weights.sum() * len(mass_cond_SR)
+
+        uniform_mass_SR = torch.from_numpy(uniform_mass_SR).reshape((-1, 1)).type(torch.FloatTensor).to(self.device)
+
+        # sample from all model_Bs, and average the results in histograms
+        sampled_SR_events_list = []
+        sampled_SR_events_list_weight = []
+        for model_B in model_Bs:
+            with torch.no_grad():
+                sampled_SR_events = model_B.model.sample(num_samples=len(uniform_mass_SR), cond_inputs=uniform_mass_SR)
+                sampled_SR_events = sampled_SR_events.cpu().numpy().astype('float32')
+                sampled_SR_events_list.append(sampled_SR_events)
+                sampled_SR_events_list_weight.append(uniform_mass_SR_weights)
+
+        sampled_SR_events = np.array(sampled_SR_events_list).reshape(-1, len(sampled_SR_events[0]))
+        sampled_SR_events_weight = np.array(sampled_SR_events_list_weight).flatten() / len(model_Bs)
+
+        uniform_mass_SR = uniform_mass_SR.cpu().numpy().reshape(-1).astype('float32')
+
+        # plot the comparison
+        with PdfPages(self.output()["SR_comparison_plot"].path) as pdf:
+            # first plot the mass distribution
+            f = plt.figure()
+            plt.hist(mass_cond_SR, bins=SR_mass_bins, histtype='step', label='mass condition SR')
+            plt.hist(uniform_mass_SR, bins=SR_mass_bins, weights=uniform_mass_SR_weights, histtype='step', label='uniform mass SR')
+            plt.xlabel('mass')
+            plt.ylabel('counts')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+            # then plot the rest of the variables
+            for i in range(len(sampled_SR_events[0])):
+                bins = np.linspace(data_train_SR_B[:,i+1].min(), data_train_SR_B[:,i+1].max(), 100)
+                f = plt.figure()
+                plt.hist(sampled_SR_events[:,i], bins=bins, weights=sampled_SR_events_weight, histtype='step', label='sampled SR events')
+                plt.hist(data_train_SR_B[data_train_SR_B[:, -1]==0, i+1], bins=bins, histtype='step', label='data_train_SR (background)')
+                plt.hist(data_train_SR_B[data_train_SR_B[:, -1]==1, i+1], bins=bins, histtype='step', label='data_train_SR (signal)')
+                plt.hist(data_train_SR_B[:,i+1], bins=bins, histtype='step', label='data_train_SR (all)')
+                plt.xlabel(f'var {i}')
+                plt.ylabel('counts')
+                plt.legend()
+                pdf.savefig(f)
+                plt.close(f)
+
+
+
