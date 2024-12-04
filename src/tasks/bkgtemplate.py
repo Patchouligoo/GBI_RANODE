@@ -257,4 +257,77 @@ class BkgTemplateChecking(
                 plt.close(f)
 
 
+class PredictBkgProb(
+    SignalNumberMixin,
+    BaseTask, 
+):
+    
+    device = luigi.Parameter(default="cuda")
+
+    def requires(self):
+        return {
+            "bkg_models": BkgTemplateTraining.req(self),
+            "preprocessed_data": Preprocessing.req(self),
+        }    
+    
+    def output(self):
+        return {
+            "log_B_train": self.local_target("log_B_train.npy"),
+            "log_B_val": self.local_target("log_B_val.npy"),
+            "log_B_test": self.local_target("log_B_test.npy"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+        # load the models
+        ranode_path = os.environ.get("RANODE")
+        sys.path.append(ranode_path)
+        from density_estimator import DensityEstimator
+        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
+        model_Bs = []
+        for i in range(10):
+            model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
+            best_model_dir = self.input()["bkg_models"]["bkg_models"][i].path
+            model_B.model.load_state_dict(torch.load(best_model_dir))
+            model_B.model.to("cuda")
+            model_B.model.eval()
+            model_Bs.append(model_B)
+
+        # load the sample to compare with
+        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path)
+        traintensor_SR_B = torch.from_numpy(data_train_SR_B.astype('float32')).to(self.device)
+        data_val_SR_B = np.load(self.input()["preprocessed_data"]["data_val_SR_B"].path)
+        valtensor_SR_B = torch.from_numpy(data_val_SR_B.astype('float32')).to(self.device)
+        data_test_SR_B = np.load(self.input()["preprocessed_data"]["data_test_SR_B"].path)
+        testtensor_SR_B = torch.from_numpy(data_test_SR_B.astype('float32')).to(self.device)
+
+        # get avg probility of 10 models
+        log_B_train_list = []
+        log_B_val_list = []
+        log_B_test_list = []
+        for model_B in model_Bs:
+            with torch.no_grad():
+                log_B_train = model_B.model.log_probs(inputs=traintensor_SR_B[:,1:-1], cond_inputs=traintensor_SR_B[:,0].reshape(-1,1))
+                log_B_train_list.append(log_B_train.cpu().numpy())
+                log_B_val = model_B.model.log_probs(inputs=valtensor_SR_B[:,1:-1], cond_inputs=valtensor_SR_B[:,0].reshape(-1,1))
+                log_B_val_list.append(log_B_val.cpu().numpy())
+                log_B_test = model_B.model.log_probs(inputs=testtensor_SR_B[:,1:-1], cond_inputs=testtensor_SR_B[:,0].reshape(-1,1))
+                log_B_test_list.append(log_B_test.cpu().numpy())
+
+        log_B_train = np.array(log_B_train_list)
+        B_train = np.exp(log_B_train).mean(axis=0)
+        log_B_train = np.log(B_train + 1e-32)
+
+        log_B_val = np.array(log_B_val_list)
+        B_val = np.exp(log_B_val).mean(axis=0)
+        log_B_val = np.log(B_val + 1e-32)
+
+        log_B_test = np.array(log_B_test_list)
+        B_test = np.exp(log_B_test).mean(axis=0)
+        log_B_test = np.log(B_test + 1e-32)
+ 
+        self.output()["log_B_train"].parent.touch()
+        np.save(self.output()["log_B_train"].path, log_B_train)
+        np.save(self.output()["log_B_val"].path, log_B_val)
+        np.save(self.output()["log_B_test"].path, log_B_test)
 
