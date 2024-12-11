@@ -12,7 +12,6 @@ from src.utils.law import BaseTask, SignalNumberMixin
 from src.tasks.preprocessing import Preprocessing
 
 class BkgTemplateTraining(
-    SignalNumberMixin,
     BaseTask
 ):
     device = luigi.Parameter(default="cuda")
@@ -20,7 +19,7 @@ class BkgTemplateTraining(
     epochs = luigi.IntParameter(default=200)
 
     def requires(self):
-        return Preprocessing.req(self)
+        return Preprocessing.req(self, n_sig=0)
     
     def output(self):
         return {
