@@ -8,11 +8,11 @@ from scipy.stats import rv_histogram
 import pickle
 import torch
 
-from src.utils.law import BaseTask, SignalNumberMixin, BkgTemplateRandomMixin, BkgTemplateUncertaintyMixin
+from src.utils.law import BaseTask, SignalNumberMixin, TemplateRandomMixin, TemplateUncertaintyMixin
 from src.tasks.preprocessing import Preprocessing
 
 class BkgTemplateTraining(
-    BkgTemplateRandomMixin,
+    TemplateRandomMixin,
     BaseTask
 ):
     device = luigi.Parameter(default="cuda")
@@ -34,7 +34,7 @@ class BkgTemplateTraining(
     def run(self):
         
         # freeze the random seed of torch
-        torch.manual_seed(self.bkg_train_random_seed)
+        torch.manual_seed(self.train_random_seed)
 
         # need:
         # "data_train_CR": self.local_target("data_train_cr.npy"),
@@ -103,7 +103,7 @@ class BkgTemplateTraining(
 
 
 class BkgTemplateChecking(
-    BkgTemplateUncertaintyMixin,
+    TemplateUncertaintyMixin,
     SignalNumberMixin,
     BaseTask, 
 ):
@@ -114,7 +114,7 @@ class BkgTemplateChecking(
     
     def requires(self):
         return {
-            "bkg_models": [BkgTemplateTraining.req(self, bkg_train_random_seed=i) for i in range(self.num_bkg_templates)],
+            "bkg_models": [BkgTemplateTraining.req(self, train_random_seed=i) for i in range(self.num_templates)],
             "preprocessed_data": Preprocessing.req(self),
         }
     
@@ -132,7 +132,7 @@ class BkgTemplateChecking(
 
         train_loss_dict = {}
         val_loss_dict = {}
-        for i in range(self.num_bkg_templates):
+        for i in range(self.num_templates):
             train_loss = np.load(self.input()["bkg_models"][i]["trainloss_list"].path)
             val_loss = np.load(self.input()["bkg_models"][i]["valloss_list"].path)
             train_loss_dict[i] = train_loss
@@ -141,7 +141,7 @@ class BkgTemplateChecking(
         self.output()['loss_plot'].parent.touch()
         # ----------------------------------- plot loss -----------------------------------
         with PdfPages(self.output()["loss_plot"].path) as pdf:
-            for i in range(self.num_bkg_templates):
+            for i in range(self.num_templates):
                 train_loss = train_loss_dict[i]
                 val_loss = val_loss_dict[i]
                 f = plt.figure()
@@ -169,7 +169,7 @@ class BkgTemplateChecking(
         config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
         from density_estimator import DensityEstimator
         
-        for seed_i in range(self.num_bkg_templates):
+        for seed_i in range(self.num_templates):
             for model_epoch_j in range(self.num_model_to_save):
                 # load the models
                 model_B_seed_i_epoch_j = DensityEstimator(config_file, eval_mode=True, device=self.device)
@@ -214,7 +214,7 @@ class BkgTemplateChecking(
         # we load all model_Bs trained with seed_i and best epoch j
         model_Bs = []
 
-        for i in range(self.num_bkg_templates):
+        for i in range(self.num_templates):
             for j in range(self.num_model_to_save):
                 model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
                 best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
@@ -281,7 +281,7 @@ class BkgTemplateChecking(
 
 
 class PredictBkgProb(
-    BkgTemplateUncertaintyMixin,
+    TemplateUncertaintyMixin,
     SignalNumberMixin,
     BaseTask, 
 ):
@@ -291,7 +291,7 @@ class PredictBkgProb(
 
     def requires(self):
         return {
-            "bkg_models": [BkgTemplateTraining.req(self, bkg_train_random_seed=i) for i in range(self.num_bkg_templates)],
+            "bkg_models": [BkgTemplateTraining.req(self, train_random_seed=i) for i in range(self.num_templates)],
             "preprocessed_data": Preprocessing.req(self),
         }    
     
@@ -311,7 +311,7 @@ class PredictBkgProb(
         config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
         model_Bs = []
 
-        for i in range(self.num_bkg_templates):
+        for i in range(self.num_templates):
             for j in range(self.num_model_to_save):
                 model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
                 best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
