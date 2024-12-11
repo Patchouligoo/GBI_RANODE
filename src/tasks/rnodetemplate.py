@@ -7,10 +7,12 @@ import pandas as pd
 from scipy.stats import rv_histogram
 import pickle
 import torch
+import json
 
 from src.utils.law import BaseTask, SignalNumberMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
+from src.utils.utils import NumpyEncoder
 
 class RNodeTemplate(
     SignalNumberMixin,
@@ -19,7 +21,7 @@ class RNodeTemplate(
     
     device = luigi.Parameter(default="cuda")
     batchsize = luigi.IntParameter(default=1024)
-    epochs = luigi.IntParameter(default=200)
+    epochs = luigi.IntParameter(default=100)
     w_value = luigi.FloatParameter(default=0.05)
     train_seed = luigi.IntParameter(default=42)
 
@@ -35,7 +37,10 @@ class RNodeTemplate(
 
     def output(self):
         return {
-            "sig_model": law.LocalFileTarget("sig_model.pt"),
+            "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(10)],
+            "trainloss_list": self.local_target("trainloss_list.npy"),
+            "valloss_list": self.local_target("valloss_list.npy"),
+            "metadata": self.local_target("metadata.json"),
         }
     
     @law.decorator.safe_output 
@@ -124,8 +129,97 @@ class RNodeTemplate(
 
 
 
-            torch.save(model_S.state_dict(), scrath_path+'/model_B/model_S_'+str(epoch)+'.pt')
+            torch.save(model_S.state_dict(), scrath_path+'/model_S/model_S_'+str(epoch)+'.pt')
 
             trainloss_list.append(train_loss)
             valloss_list.append(val_loss)
             print('Epoch: ', epoch, 'Train loss: ', train_loss, 'Val loss: ', val_loss)
+
+        # save train and val loss
+        trainloss_list=np.array(trainloss_list)
+        valloss_list=np.array(valloss_list)
+        self.output()["trainloss_list"].parent.touch()
+        np.save(self.output()["trainloss_list"].path, trainloss_list)
+        np.save(self.output()["valloss_list"].path, valloss_list)
+
+        # save 10 best models with lowest val loss
+        best_models = np.argsort(valloss_list)[:10]
+        for i in range(10):
+            print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
+            os.rename(scrath_path+'/model_S/model_S_'+str(best_models[i])+'.pt', self.output()["sig_models"][i].path)
+
+        # save metadata
+        metadata = {"w_true": w_true}
+        with open(self.output()["metadata"].path, 'w') as f:
+            json.dump(metadata, f, cls=NumpyEncoder)
+
+
+
+class ScanRANODEoverW(
+    SignalNumberMixin,
+    BaseTask,
+):
+    
+    w_min = luigi.FloatParameter(default=0.001)
+    w_max = luigi.FloatParameter(default=0.1)
+    scan_number = luigi.IntParameter(default=20)
+
+    def requires(self):
+        model_list = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+
+        for index in range(self.scan_number):
+            model_list[f"model_{index}"] = RNodeTemplate.req(self, w_value=w_range[index])
+
+        return model_list
+    
+    def output(self):
+        return {
+            "scan_results": self.local_target("scan_results.json"),
+            "scan_plot": self.local_target("scan_plot.pdf"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        results = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+
+        w_true = self.input()["model_0"]["metadata"].load()["w_true"]
+
+        for index in range(self.scan_number):
+            trainloss_index = np.load(self.input()[f"model_{index}"]["trainloss_list"].path)
+            valloss_index = np.load(self.input()[f"model_{index}"]["valloss_list"].path)
+
+            avg_trainloss = np.mean(trainloss_index)
+            avg_valloss = np.mean(valloss_index)
+
+            results[f"model_{index}"] = {
+                "w": w_range[index],
+                "avg_trainloss": avg_trainloss,
+                "avg_valloss": avg_valloss,
+            }
+
+        self.output()["scan_results"].parent.touch()
+        with open(self.output()["scan_results"].path, 'w') as f:
+            json.dump(results, f, cls=NumpyEncoder)
+
+        # plot
+        import matplotlib.pyplot as plt
+        plt.figure()
+        w_range_log = np.log10(w_range)
+        val_loss = [results[f"model_{index}"]["avg_valloss"] for index in range(self.scan_number)]
+        plt.plot(w_range_log, val_loss, 'o-', color='r', label='w_scan')
+        
+        # plot vertical line at w_true
+        plt.axvline(np.log10(w_true), color='b', label='w_true')
+
+        plt.xlabel('log10(w)')
+        plt.ylabel('avg_val_loss')
+        plt.title('Scan over w')
+        plt.legend()
+        plt.savefig(self.output()["scan_plot"].path)
+
+        # TODO:
+        # train with random seed, show errorbar of 10 models * K seed tests
+        # use test set not validation set?
