@@ -154,7 +154,6 @@ class RNodeTemplate(
             json.dump(metadata, f, cls=NumpyEncoder)
 
 
-
 class ScanRANODEoverW(
     SignalNumberMixin,
     BaseTask,
@@ -177,6 +176,7 @@ class ScanRANODEoverW(
         return {
             "scan_results": self.local_target("scan_results.json"),
             "scan_plot": self.local_target("scan_plot.pdf"),
+            "metadata": self.local_target("metadata.json"),
         }
     
     @law.decorator.safe_output
@@ -198,6 +198,10 @@ class ScanRANODEoverW(
                 "w": w_range[index],
                 "avg_trainloss": avg_trainloss,
                 "avg_valloss": avg_valloss,
+                "std_trainloss": np.std(trainloss_index),
+                "std_valloss": np.std(valloss_index),
+                "trainloss": trainloss_index.tolist(),
+                "valloss": valloss_index.tolist(),
             }
 
         self.output()["scan_results"].parent.touch()
@@ -209,17 +213,27 @@ class ScanRANODEoverW(
         plt.figure()
         w_range_log = np.log10(w_range)
         val_loss = [results[f"model_{index}"]["avg_valloss"] for index in range(self.scan_number)]
-        plt.plot(w_range_log, val_loss, 'o-', color='r', label='w_scan')
+        val_loss_std = [results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)]
+        plt.plot(w_range_log, -1 * val_loss, color='r', label='w_scan')
+        plt.errorbar(w_range_log, -1 * val_loss, yerr=val_loss_std, fmt='o', color='r')
         
         # plot vertical line at w_true
         plt.axvline(np.log10(w_true), color='b', label='w_true')
 
         plt.xlabel('log10(w)')
-        plt.ylabel('avg_val_loss')
-        plt.title('Scan over w')
+        plt.ylabel('likelihood')
+        plt.title(f'w scan likelihood, w_true is {w_true:.5f}')
         plt.legend()
         plt.savefig(self.output()["scan_plot"].path)
+
+        # save metadata
+        w_best_index = np.argmin(val_loss)
+        w_best = w_range[w_best_index]
+        metadata = {"w_true": w_true, "w_best": w_best, "w_best_index": w_best_index}
+        with open(self.output()["metadata"].path, 'w') as f:
+            json.dump(metadata, f, cls=NumpyEncoder)
 
         # TODO:
         # train with random seed, show errorbar of 10 models * K seed tests
         # use test set not validation set?
+        # do the adjust w fitting, not scanning
