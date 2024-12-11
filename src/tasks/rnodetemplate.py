@@ -8,12 +8,11 @@ from scipy.stats import rv_histogram
 import pickle
 import torch
 
-from src.utils.law import BaseTask, SignalNumberMixin, RandomSeedMixin
+from src.utils.law import BaseTask, SignalNumberMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 
 class RNodeTemplate(
-    RandomSeedMixin,
     SignalNumberMixin,
     BaseTask,
 ):
@@ -22,6 +21,11 @@ class RNodeTemplate(
     batchsize = luigi.IntParameter(default=1024)
     epochs = luigi.IntParameter(default=200)
     w_value = luigi.FloatParameter(default=0.05)
+    train_seed = luigi.IntParameter(default=42)
+
+    def store_parts(self):
+        w_value = str(self.w_value)
+        return super().store_parts() + (f"w_{w_value}", f"train_seed_{self.train_seed}")
 
     def requires(self):
         return {

@@ -39,11 +39,3 @@ class SignalNumberMixin:
     def store_parts(self):
         return super().store_parts() + (f"n_sig_{self.n_sig}",)
 
-
-class RandomSeedMixin:
-
-    seed = luigi.IntParameter(default=42)
-
-    def store_parts(self):
-        return super().store_parts() + (f"seed_{self.seed}",)
-
