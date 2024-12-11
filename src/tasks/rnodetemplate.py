@@ -162,6 +162,7 @@ class ScanRANODEoverW(
     w_min = luigi.FloatParameter(default=0.001)
     w_max = luigi.FloatParameter(default=0.1)
     scan_number = luigi.IntParameter(default=20)
+    num_model_to_avg = luigi.IntParameter(default=10)
 
     def requires(self):
         model_list = {}
@@ -191,15 +192,15 @@ class ScanRANODEoverW(
             trainloss_index = np.load(self.input()[f"model_{index}"]["trainloss_list"].path)
             valloss_index = np.load(self.input()[f"model_{index}"]["valloss_list"].path)
 
-            avg_trainloss = np.mean(trainloss_index)
-            avg_valloss = np.mean(valloss_index)
+            # takr min val losses to calculate the avg and std
+            best_models = np.argsort(valloss_index)[:self.num_model_to_avg]
+            avg_valloss = np.mean(valloss_index[best_models])
+            std_valloss = np.std(valloss_index[best_models])
 
             results[f"model_{index}"] = {
                 "w": w_range[index],
-                "avg_trainloss": avg_trainloss,
                 "avg_valloss": avg_valloss,
-                "std_trainloss": np.std(trainloss_index),
-                "std_valloss": np.std(valloss_index),
+                "std_valloss": std_valloss,
                 "trainloss": trainloss_index.tolist(),
                 "valloss": valloss_index.tolist(),
             }
@@ -212,8 +213,8 @@ class ScanRANODEoverW(
         import matplotlib.pyplot as plt
         plt.figure()
         w_range_log = np.log10(w_range)
-        val_loss = [results[f"model_{index}"]["avg_valloss"] for index in range(self.scan_number)]
-        val_loss_std = [results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)]
+        val_loss = np.array([results[f"model_{index}"]["avg_valloss"] for index in range(self.scan_number)])
+        val_loss_std = np.array([results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)])
         plt.plot(w_range_log, -1 * val_loss, color='r', label='w_scan')
         plt.errorbar(w_range_log, -1 * val_loss, yerr=val_loss_std, fmt='o', color='r')
         
