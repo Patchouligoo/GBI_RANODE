@@ -8,28 +8,33 @@ from scipy.stats import rv_histogram
 import pickle
 import torch
 
-from src.utils.law import BaseTask, SignalNumberMixin
+from src.utils.law import BaseTask, SignalNumberMixin, BkgTemplateRandomMixin, BkgTemplateUncertaintyMixin
 from src.tasks.preprocessing import Preprocessing
 
 class BkgTemplateTraining(
+    BkgTemplateRandomMixin,
     BaseTask
 ):
     device = luigi.Parameter(default="cuda")
-    batchsize = luigi.IntParameter(default=512)
+    batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=200)
+    num_model_to_save = luigi.IntParameter(default=10)
 
     def requires(self):
         return Preprocessing.req(self, n_sig=0)
     
     def output(self):
         return {
-            "bkg_models": [self.local_target("model_CR_"+str(i)+".pt") for i in range(10)],
+            "bkg_models": [self.local_target("model_CR_"+str(i)+".pt") for i in range(self.num_model_to_save)],
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
         }
     
     @law.decorator.safe_output 
     def run(self):
+        
+        # freeze the random seed of torch
+        torch.manual_seed(self.bkg_train_random_seed)
 
         # need:
         # "data_train_CR": self.local_target("data_train_cr.npy"),
@@ -69,7 +74,7 @@ class BkgTemplateTraining(
             for file in os.listdir(scrath_path + "/model_B/"):
                 os.remove(scrath_path + "/model_B/" + file)
 
-        # no early stopping, just run 200 epochs and take 10 lowest valloss models
+        # no early stopping, just run 200 epochs and take num_model_to_save lowest valloss models
         for epoch in range(self.epochs):
 
             trainloss=anode(model_B.model,trainloader,model_B.optimizer,params=None ,device=self.device, mode='train')
@@ -90,24 +95,26 @@ class BkgTemplateTraining(
         np.save(self.output()["trainloss_list"].path, trainloss_list)
         np.save(self.output()["valloss_list"].path, valloss_list)
 
-        # save 10 best models
-        best_models = np.argsort(valloss_list)[:10]
-        for i in range(10):
+        # save best models
+        best_models = np.argsort(valloss_list)
+        for i in range(self.num_model_to_save):
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
             os.rename(scrath_path+'/model_B/model_CR_'+str(best_models[i])+'.pt', self.output()["bkg_models"][i].path)
 
 
 class BkgTemplateChecking(
+    BkgTemplateUncertaintyMixin,
     SignalNumberMixin,
     BaseTask, 
 ):
     
     device = luigi.Parameter(default="cuda")
     num_CR_samples = luigi.IntParameter(default=100000)
+    num_model_to_save = luigi.IntParameter(default=10)
     
     def requires(self):
         return {
-            "bkg_models": BkgTemplateTraining.req(self),
+            "bkg_models": [BkgTemplateTraining.req(self, bkg_train_random_seed=i) for i in range(self.num_bkg_templates)],
             "preprocessed_data": Preprocessing.req(self),
         }
     
@@ -123,45 +130,61 @@ class BkgTemplateChecking(
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_pdf import PdfPages
 
-        # ----------------------------------- plot loss -----------------------------------
+        train_loss_dict = {}
+        val_loss_dict = {}
+        for i in range(self.num_bkg_templates):
+            train_loss = np.load(self.input()["bkg_models"][i]["trainloss_list"].path)
+            val_loss = np.load(self.input()["bkg_models"][i]["valloss_list"].path)
+            train_loss_dict[i] = train_loss
+            val_loss_dict[i] = val_loss
+
         self.output()['loss_plot'].parent.touch()
-        train_loss = np.load(self.input()["bkg_models"]["trainloss_list"].path)
-        val_loss = np.load(self.input()["bkg_models"]["valloss_list"].path)
-        f = plt.figure()
-        plt.plot(train_loss, label='train loss')
-        plt.plot(val_loss, label='val loss')
-        plt.legend()
-        plt.xlabel('epoch')
-        plt.ylabel('loss')
-        plt.title('Training and validation loss')
-        f.savefig(self.output()["loss_plot"].path)
-
-        # ----------------------------------- load model --------------------------------
-        # define model 
-        ranode_path = os.environ.get("RANODE")
-        sys.path.append(ranode_path)
-        # from utils import inverse_transform
-        # load the models
-        from density_estimator import DensityEstimator
-        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
-        model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
-        best_model_dir = self.input()["bkg_models"]["bkg_models"][0].path
-        model_B.model.load_state_dict(torch.load(best_model_dir))
-        model_B.model.to(self.device)
-        model_B.model.eval()
-
+        # ----------------------------------- plot loss -----------------------------------
+        with PdfPages(self.output()["loss_plot"].path) as pdf:
+            for i in range(self.num_bkg_templates):
+                train_loss = train_loss_dict[i]
+                val_loss = val_loss_dict[i]
+                f = plt.figure()
+                plt.plot(train_loss, label='train loss')
+                plt.plot(val_loss, label='val loss')
+                plt.legend()
+                plt.xlabel('epoch')
+                plt.ylabel('loss')
+                plt.title('Training and validation loss for model '+str(i))
+                pdf.savefig(f)
+                plt.close(f)
+        
         # -------------------------------- CR comparison plots --------------------------------
         # load the sample to compare with
         data_train_CR = np.load(self.input()["preprocessed_data"]["data_train_CR"].path)
-
         # generate CR events using the model with condition from data_train_CR
         mass_cond_CR = torch.from_numpy(data_train_CR[:,0]).reshape((-1, 1)).type(torch.FloatTensor).to(self.device)
         mass_cond_CR = mass_cond_CR[:self.num_CR_samples]
 
-        with torch.no_grad():
-            sampled_CR_events = model_B.model.sample(num_samples=len(mass_cond_CR), cond_inputs=mass_cond_CR)
+        sampled_CR_events = [] 
 
-        sampled_CR_events = sampled_CR_events.cpu().numpy().astype('float32')
+        # ----------------------------------- load all models and make prediction --------------------------------
+        ranode_path = os.environ.get("RANODE")
+        sys.path.append(ranode_path)
+        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
+        from density_estimator import DensityEstimator
+        
+        for seed_i in range(self.num_bkg_templates):
+            for model_epoch_j in range(self.num_model_to_save):
+                # load the models
+                model_B_seed_i_epoch_j = DensityEstimator(config_file, eval_mode=True, device=self.device)
+                best_model_dir_seed_i_epoch_j = self.input()["bkg_models"][seed_i]["bkg_models"][model_epoch_j].path
+                model_B_seed_i_epoch_j.model.load_state_dict(torch.load(best_model_dir_seed_i_epoch_j))
+                model_B_seed_i_epoch_j.model.to(self.device)
+                model_B_seed_i_epoch_j.model.eval()
+
+                with torch.no_grad():
+                    sampled_CR_events_seed_i_epoch_j = model_B_seed_i_epoch_j.model.sample(num_samples=len(mass_cond_CR), cond_inputs=mass_cond_CR)
+
+                sampled_CR_events.extend(sampled_CR_events_seed_i_epoch_j.cpu().numpy().astype('float32'))
+
+        sampled_CR_events = np.array(sampled_CR_events)
+        sampled_CR_events_weight = np.ones(len(sampled_CR_events)) / len(sampled_CR_events) * self.num_CR_samples
 
         # plot the comparison
         with PdfPages(self.output()["CR_comparison_plot"].path) as pdf:
@@ -180,7 +203,7 @@ class BkgTemplateChecking(
                 bins = np.linspace(data_train_CR[:,i+1].min(), data_train_CR[:,i+1].max(), 100)
                 f = plt.figure()
                 plt.hist(data_train_CR[:self.num_CR_samples,i+1], bins=bins, histtype='step', label='data_train_CR')
-                plt.hist(sampled_CR_events[:,i], bins=bins, histtype='step', label='sampled CR events')
+                plt.hist(sampled_CR_events[:,i], weights=sampled_CR_events_weight, bins=bins, histtype='step', label='sampled CR events')
                 plt.xlabel(f'var {i}')
                 plt.ylabel('counts')
                 plt.legend()
@@ -188,16 +211,17 @@ class BkgTemplateChecking(
                 plt.close(f)
 
         # -------------------------------- SR comparison plots --------------------------------
-        # we load 10 model_Bs
+        # we load all model_Bs trained with seed_i and best epoch j
         model_Bs = []
-        for i in range(10):
-            model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
-            best_model_dir = self.input()["bkg_models"]["bkg_models"][i].path
-            model_B.model.load_state_dict(torch.load(best_model_dir))
-            model_B.model.to(self.device)
-            model_B.model.eval()
-            model_Bs.append(model_B)
 
+        for i in range(self.num_bkg_templates):
+            for j in range(self.num_model_to_save):
+                model_B = DensityEstimator(config_file, eval_mode=True, device=self.device)
+                best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
+                model_B.model.load_state_dict(torch.load(best_model_dir))
+                model_B.model.to(self.device)
+                model_B.model.eval()
+                model_Bs.append(model_B)
 
         # load the sample to compare with
         data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path) # with background only
@@ -257,15 +281,17 @@ class BkgTemplateChecking(
 
 
 class PredictBkgProb(
+    BkgTemplateUncertaintyMixin,
     SignalNumberMixin,
     BaseTask, 
 ):
     
+    num_model_to_save = luigi.IntParameter(default=10)
     device = luigi.Parameter(default="cuda")
 
     def requires(self):
         return {
-            "bkg_models": BkgTemplateTraining.req(self),
+            "bkg_models": [BkgTemplateTraining.req(self, bkg_train_random_seed=i) for i in range(self.num_bkg_templates)],
             "preprocessed_data": Preprocessing.req(self),
         }    
     
@@ -284,13 +310,15 @@ class PredictBkgProb(
         from density_estimator import DensityEstimator
         config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
         model_Bs = []
-        for i in range(10):
-            model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
-            best_model_dir = self.input()["bkg_models"]["bkg_models"][i].path
-            model_B.model.load_state_dict(torch.load(best_model_dir))
-            model_B.model.to("cuda")
-            model_B.model.eval()
-            model_Bs.append(model_B)
+
+        for i in range(self.num_bkg_templates):
+            for j in range(self.num_model_to_save):
+                model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
+                best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
+                model_B.model.load_state_dict(torch.load(best_model_dir))
+                model_B.model.to("cuda")
+                model_B.model.eval()
+                model_Bs.append(model_B)
 
         # load the sample to compare with
         data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path)

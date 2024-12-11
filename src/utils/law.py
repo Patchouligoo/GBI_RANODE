@@ -39,3 +39,18 @@ class SignalNumberMixin:
     def store_parts(self):
         return super().store_parts() + (f"n_sig_{self.n_sig}",)
 
+
+class BkgTemplateRandomMixin:
+
+    bkg_train_random_seed = luigi.IntParameter(default=233)
+
+    def store_parts(self):
+        return super().store_parts() + (f"bkg_train_seed_{self.bkg_train_random_seed}",)
+    
+    
+class BkgTemplateUncertaintyMixin:
+
+    num_bkg_templates = luigi.IntParameter(default=10)
+
+    def store_parts(self):
+        return super().store_parts() + (f"num_bkg_templates_{self.num_bkg_templates}",)
