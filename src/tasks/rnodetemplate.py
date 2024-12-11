@@ -9,12 +9,13 @@ import pickle
 import torch
 import json
 
-from src.utils.law import BaseTask, SignalNumberMixin
+from src.utils.law import BaseTask, SignalNumberMixin, TemplateRandomMixin, TemplateUncertaintyMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder
 
 class RNodeTemplate(
+    TemplateRandomMixin,
     SignalNumberMixin,
     BaseTask,
 ):
@@ -23,11 +24,11 @@ class RNodeTemplate(
     batchsize = luigi.IntParameter(default=1024)
     epochs = luigi.IntParameter(default=100)
     w_value = luigi.FloatParameter(default=0.05)
-    train_seed = luigi.IntParameter(default=42)
+    num_model_to_save = luigi.IntParameter(default=10)
 
     def store_parts(self):
         w_value = str(self.w_value)
-        return super().store_parts() + (f"w_{w_value}", f"train_seed_{self.train_seed}")
+        return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
         return {
@@ -37,7 +38,7 @@ class RNodeTemplate(
 
     def output(self):
         return {
-            "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(10)],
+            "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
             "metadata": self.local_target("metadata.json"),
@@ -45,6 +46,9 @@ class RNodeTemplate(
     
     @law.decorator.safe_output 
     def run(self):
+
+        # fixing random seed
+        torch.manual_seed(self.train_random_seed)
         
         print("loading data")
         # load data
@@ -142,9 +146,9 @@ class RNodeTemplate(
         np.save(self.output()["trainloss_list"].path, trainloss_list)
         np.save(self.output()["valloss_list"].path, valloss_list)
 
-        # save 10 best models with lowest val loss
-        best_models = np.argsort(valloss_list)[:10]
-        for i in range(10):
+        # save best models with lowest val loss
+        best_models = np.argsort(valloss_list)[:self.num_model_to_save]
+        for i in range(self.num_model_to_save):
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
             os.rename(scrath_path+'/model_S/model_S_'+str(best_models[i])+'.pt', self.output()["sig_models"][i].path)
 
@@ -155,13 +159,14 @@ class RNodeTemplate(
 
 
 class ScanRANODEoverW(
+    TemplateUncertaintyMixin,
     SignalNumberMixin,
     BaseTask,
 ):
     
     w_min = luigi.FloatParameter(default=0.001)
     w_max = luigi.FloatParameter(default=0.1)
-    scan_number = luigi.IntParameter(default=20)
+    scan_number = luigi.IntParameter(default=10)
     num_model_to_avg = luigi.IntParameter(default=10)
 
     def requires(self):
@@ -169,7 +174,7 @@ class ScanRANODEoverW(
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
         for index in range(self.scan_number):
-            model_list[f"model_{index}"] = RNodeTemplate.req(self, w_value=w_range[index])
+            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_templates)]
 
         return model_list
     
@@ -186,23 +191,31 @@ class ScanRANODEoverW(
         results = {}
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
-        w_true = self.input()["model_0"]["metadata"].load()["w_true"]
+        w_true = self.input()["model_0"][0]["metadata"].load()["w_true"]
 
-        for index in range(self.scan_number):
-            trainloss_index = np.load(self.input()[f"model_{index}"]["trainloss_list"].path)
-            valloss_index = np.load(self.input()[f"model_{index}"]["valloss_list"].path)
+        for index_w in range(self.scan_number):
 
-            # takr min val losses to calculate the avg and std
-            best_models = np.argsort(valloss_index)[:self.num_model_to_avg]
-            avg_valloss = np.mean(valloss_index[best_models])
-            std_valloss = np.std(valloss_index[best_models])
+            valloss_list = []
 
-            results[f"model_{index}"] = {
-                "w": w_range[index],
-                "avg_valloss": avg_valloss,
+            for index_seed in range(self.num_templates):
+                trainloss_index = np.load(self.input()[f"model_{index_w}"][index_seed]["trainloss_list"].path)
+                valloss_index = np.load(self.input()[f"model_{index_w}"][index_seed]["valloss_list"].path)
+
+                # takr min val losses to calculate the avg and std
+                best_models = np.argsort(valloss_index)[:self.num_model_to_avg]
+                min_valloss = valloss_index[best_models]
+
+                valloss_list.extend(min_valloss)
+
+            valloss_list = np.array(valloss_list)
+            mean_valloss = np.mean(valloss_list)
+            std_valloss = np.std(valloss_list)
+
+            results[f"model_{index_w}"] = {
+                "w": w_range[index_w],
+                "mean_valloss": mean_valloss,
                 "std_valloss": std_valloss,
-                "trainloss": trainloss_index.tolist(),
-                "valloss": valloss_index.tolist(),
+                "valloss_list": valloss_list,
             }
 
         self.output()["scan_results"].parent.touch()
@@ -213,7 +226,7 @@ class ScanRANODEoverW(
         import matplotlib.pyplot as plt
         plt.figure()
         w_range_log = np.log10(w_range)
-        val_loss = np.array([results[f"model_{index}"]["avg_valloss"] for index in range(self.scan_number)])
+        val_loss = np.array([results[f"model_{index}"]["mean_valloss"] for index in range(self.scan_number)])
         val_loss_std = np.array([results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)])
         plt.plot(w_range_log, -1 * val_loss, color='r', label='w_scan')
         plt.errorbar(w_range_log, -1 * val_loss, yerr=val_loss_std, fmt='o', color='r')
