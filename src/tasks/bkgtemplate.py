@@ -335,10 +335,18 @@ class PredictBkgProb(
         for model_B in model_Bs:
             with torch.no_grad():
                 log_B_train = model_B.model.log_probs(inputs=traintensor_SR_B[:,1:-1], cond_inputs=traintensor_SR_B[:,0].reshape(-1,1))
+                # set all nans to 0
+                log_B_train[torch.isnan(log_B_train)] = 0
                 log_B_train_list.append(log_B_train.cpu().numpy())
+
                 log_B_val = model_B.model.log_probs(inputs=valtensor_SR_B[:,1:-1], cond_inputs=valtensor_SR_B[:,0].reshape(-1,1))
+                # set all nans to 0
+                log_B_val[torch.isnan(log_B_val)] = 0
                 log_B_val_list.append(log_B_val.cpu().numpy())
+
                 log_B_test = model_B.model.log_probs(inputs=testtensor_SR_B[:,1:-1], cond_inputs=testtensor_SR_B[:,0].reshape(-1,1))
+                # set all nans to 0
+                log_B_test[torch.isnan(log_B_test)] = 0
                 log_B_test_list.append(log_B_test.cpu().numpy())
 
         log_B_train = np.array(log_B_train_list)
