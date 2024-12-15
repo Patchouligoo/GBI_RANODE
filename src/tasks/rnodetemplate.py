@@ -248,6 +248,186 @@ class ScanRANODEoverW(
             json.dump(metadata, f, cls=NumpyEncoder)
 
         # TODO:
-        # train with random seed, show errorbar of 10 models * K seed tests
         # use test set not validation set?
-        # do the adjust w fitting, not scanning
+
+
+class InterpolateRANODEoverW(
+    ScanRANODEoverW
+):
+    """
+    In previous task ScanRANODEoverW, we have scanned over w values and found the best w value, the likelihood plot
+    is made by taking the mean of the val loss over all best models at each w value, and it will peak at w_best
+
+    An alternative way of this will be take the best w, and the model_S at this w value, then simply plot
+    w * model_S() + (1-w) * model_B() and compare with method 1
+
+    The difference here is that in method 1, every point has its own model optimized for this w value, and the likelihood
+    is the likelihood of the best model at this w value. In method 2, we take the best model at the best w value and simely
+    change its w value in interpolation, so the model at different w values are always the same
+
+    Not sure which one is correct
+    """
+
+    device = luigi.Parameter(default="cuda")
+
+    def requires(self):
+        model_list = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+
+        for index in range(self.scan_number):
+            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_templates)]
+
+        w_scan_results = ScanRANODEoverW.req(self)
+
+        return {
+            'preprocessing': Preprocessing.req(self),
+            'bkgprob': PredictBkgProb.req(self),
+            "models": model_list,
+            "w_scan_results": w_scan_results,
+        }
+
+    def output(self):
+        return {
+            "comparison_plot": self.local_target("comparison_plot.pdf"),
+            "metadata": self.local_target("metadata.json"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+            
+        # load previous scan result
+        w_scan_results = self.input()["w_scan_results"]["metadata"].load()
+        w_best = w_scan_results["w_best"]
+        w_best_index = w_scan_results["w_best_index"]
+        w_true = w_scan_results["w_true"]
+
+        scan_results = self.input()["w_scan_results"]["scan_results"].load()
+        w_scan_list = []
+        likelihood_scan_list = []
+        likelihood_scan_list_std = []
+        for model_name, value in scan_results.items():
+            w_scan_list.append(value["w"])
+            likelihood_scan_list.append(-1 * value["mean_valloss"])
+            likelihood_scan_list_std.append(value["std_valloss"])
+            
+        # load the model at best w
+        model_best_list = []
+        for rand_seed_index in range(len(self.input()["models"][f"model_{w_best_index}"])):
+            model_best_seed_i = self.input()["models"][f"model_{w_best_index}"][rand_seed_index]["sig_models"]
+            for model in model_best_seed_i:
+                model_best_list.append(model.path)
+
+        # define model
+        ranode_path = os.environ.get("RANODE")
+        sys.path.append(ranode_path)
+        from nflow_utils import flows_model_RQS
+        
+
+        # ------- load data -------
+
+        # for model_B
+        data_val_SR_B = np.load(self.input()['preprocessing']['data_val_SR_B'].path)
+        data_val_SR_B_prob = np.load(self.input()['bkgprob']['log_B_val'].path) 
+        log_B_val_tensor = torch.from_numpy(data_val_SR_B_prob.astype('float32')).to(self.device).flatten()
+
+        # p(m) for model_B p(x|m)
+        valtensor_B = torch.from_numpy(data_val_SR_B.astype('float32')).to(self.device)
+        SR_mass_hist = np.load(self.input()['preprocessing']['SR_mass_hist'].path)
+        SR_mass_bins = np.load(self.input()['preprocessing']['SR_mass_bins'].path)
+        density_back = rv_histogram((SR_mass_hist, SR_mass_bins))
+        val_mass_prob_B = torch.from_numpy(density_back.pdf(valtensor_B[:,0].cpu().detach().numpy())).to(self.device)
+
+        bkg_likelihood = torch.exp(log_B_val_tensor)*val_mass_prob_B
+        bkg_likelihood = bkg_likelihood.cpu().detach().numpy()
+
+        # load and apply model_S
+        signal_likelihood_list = []
+        data_val_SR_S = np.load(self.input()['preprocessing']['data_val_SR_S'].path)
+        valtensor_S = torch.from_numpy(data_val_SR_S.astype('float32')).to(self.device)
+        for model_S_dir in model_best_list:
+            model_S = flows_model_RQS(device=self.device, num_features=5, context_features=None)
+            model_S.load_state_dict(torch.load(model_S_dir))
+            model_S.eval()
+            with torch.no_grad():
+                log_S_val_tensor = model_S.log_prob(valtensor_S[:, :-1])
+                S_likelihood = torch.exp(log_S_val_tensor)
+                signal_likelihood_list.append(S_likelihood.cpu().detach().numpy())
+
+            # clean cuda memory
+            del model_S
+            torch.cuda.empty_cache()
+
+        signal_likelihood_list = np.array(signal_likelihood_list) # shape is (num_models, num_samples)
+        
+        w_scan_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), 1001)
+
+        likelihood_interpolate = []
+        likelihood_interpolate_std = []
+
+        for w in w_scan_range:
+            likelihood_interpolate_w = []
+            for index, model_dir in enumerate(model_best_list):
+                bkg_prob = np.array((1 - w) * bkg_likelihood)
+                signal_prob = np.array(w * signal_likelihood_list[index])
+                likelihood = np.log(signal_prob + bkg_prob + 1e-32)
+
+                # ----------------- take mean of likelihood -----------------
+                # in previous function r_anode_mass_joint_untransformed, the likelihood is calculated for each sample in a batch
+                # have to do the same thing here to make numerically exact match between two methods on w_best model
+                # reshape into batch and then take mean
+                batchsize = 1024 * 5
+                batch_num = likelihood.shape[0] // batchsize
+                
+                rest = likelihood[batch_num * batchsize:]
+                likelihood = likelihood[:batch_num * batchsize].reshape(batch_num, batchsize)
+                likelihood = np.mean(likelihood, axis=1)
+                likelihood_rest = np.mean(rest)
+                likelihood = np.append(likelihood, likelihood_rest)
+                likelihood = np.mean(likelihood)
+                likelihood_interpolate_w.append(likelihood)
+
+            likelihood_interpolate_w = np.array(likelihood_interpolate_w)
+            likelihood_interpolate.append(np.mean(likelihood_interpolate_w))
+            likelihood_interpolate_std.append(np.std(likelihood_interpolate_w))
+
+
+        likelihood_interpolate = np.array(likelihood_interpolate)
+        likelihood_interpolate_std = np.array(likelihood_interpolate_std)
+
+        # draw the uncertainty bin
+        # we have 95% CI to be max likelihood - ln(2) / # val samples
+        CI_95 = np.log(2) / signal_likelihood_list.shape[1]
+        likelihood_interpolate_95 = max(likelihood_scan_list) - CI_95
+
+        # plot
+        self.output()["comparison_plot"].parent.touch()
+        import matplotlib.pyplot as plt
+        f = plt.figure()
+        plt.plot(np.log10(w_scan_list), likelihood_scan_list, color='r', label='w_scan result')
+        plt.fill_between(np.log10(w_scan_list), np.array(likelihood_scan_list) - np.array(likelihood_scan_list_std),
+                            np.array(likelihood_scan_list) + np.array(likelihood_scan_list_std), color='r', alpha=0.2)
+
+        plt.plot(np.log10(w_scan_range), likelihood_interpolate, color='blue', label='interpolated result')
+        plt.fill_between(np.log10(w_scan_range), likelihood_interpolate - likelihood_interpolate_std, 
+                         likelihood_interpolate + likelihood_interpolate_std, color='blue', alpha=0.2)
+
+        plt.axvline(np.log10(w_true), color='black', label='w_true')
+
+        # draw 95 CI cut
+        plt.plot(np.log10(w_scan_range), np.ones_like(w_scan_range) * likelihood_interpolate_95, color='black', linestyle='--', label='95% CI')
+
+        plt.xlabel('log10(w)')
+        plt.ylabel('likelihood')
+        plt.title(f'w scan likelihood, w_best is {w_best:.5f}')
+        plt.legend()
+        plt.savefig(self.output()["comparison_plot"].path)
+
+        # save metadata
+        metadata = {"w_best": w_best, "w_true": w_true, "likelihood_scan_list": likelihood_scan_list, 
+                    "likelihood_scan_list_std": likelihood_scan_list_std, "likelihood_interpolate": likelihood_interpolate}
+        with open(self.output()["metadata"].path, 'w') as f:
+            json.dump(metadata, f, cls=NumpyEncoder)
+
+        
+
+        
