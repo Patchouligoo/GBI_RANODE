@@ -153,7 +153,7 @@ class RNodeTemplate(
             os.rename(scrath_path+'/model_S/model_S_'+str(best_models[i])+'.pt', self.output()["sig_models"][i].path)
 
         # save metadata
-        metadata = {"w_true": w_true}
+        metadata = {"w_true": w_true, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}
         with open(self.output()["metadata"].path, 'w') as f:
             json.dump(metadata, f, cls=NumpyEncoder)
 
@@ -181,7 +181,6 @@ class ScanRANODEoverW(
     def output(self):
         return {
             "scan_results": self.local_target("scan_results.json"),
-            "scan_plot": self.local_target("scan_plot.pdf"),
             "metadata": self.local_target("metadata.json"),
         }
     
@@ -222,23 +221,8 @@ class ScanRANODEoverW(
         with open(self.output()["scan_results"].path, 'w') as f:
             json.dump(results, f, cls=NumpyEncoder)
 
-        # plot
-        import matplotlib.pyplot as plt
-        plt.figure()
-        w_range_log = np.log10(w_range)
         val_loss = np.array([results[f"model_{index}"]["mean_valloss"] for index in range(self.scan_number)])
         val_loss_std = np.array([results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)])
-        plt.plot(w_range_log, -1 * val_loss, color='r', label='w_scan')
-        plt.errorbar(w_range_log, -1 * val_loss, yerr=val_loss_std, fmt='o', color='r')
-        
-        # plot vertical line at w_true
-        plt.axvline(np.log10(w_true), color='b', label='w_true')
-
-        plt.xlabel('log10(w)')
-        plt.ylabel('likelihood')
-        plt.title(f'w scan likelihood, w_true is {w_true:.5f}')
-        plt.legend()
-        plt.savefig(self.output()["scan_plot"].path)
 
         # save metadata
         w_best_index = np.argmin(val_loss)
@@ -399,34 +383,83 @@ class InterpolateRANODEoverW(
         CI_95 = np.log(2) / signal_likelihood_list.shape[1]
         likelihood_interpolate_95 = max(likelihood_scan_list) - CI_95
 
-        # plot
-        self.output()["comparison_plot"].parent.touch()
-        import matplotlib.pyplot as plt
-        f = plt.figure()
-        plt.plot(np.log10(w_scan_list), likelihood_scan_list, color='r', label='w_scan result')
-        plt.fill_between(np.log10(w_scan_list), np.array(likelihood_scan_list) - np.array(likelihood_scan_list_std),
-                            np.array(likelihood_scan_list) + np.array(likelihood_scan_list_std), color='r', alpha=0.2)
-
-        plt.plot(np.log10(w_scan_range), likelihood_interpolate, color='blue', label='interpolated result')
-        plt.fill_between(np.log10(w_scan_range), likelihood_interpolate - likelihood_interpolate_std, 
-                         likelihood_interpolate + likelihood_interpolate_std, color='blue', alpha=0.2)
-
-        plt.axvline(np.log10(w_true), color='black', label='w_true')
-
-        # draw 95 CI cut
-        plt.plot(np.log10(w_scan_range), np.ones_like(w_scan_range) * likelihood_interpolate_95, color='black', linestyle='--', label='95% CI')
-
-        plt.xlabel('log10(w)')
-        plt.ylabel('likelihood')
-        plt.title(f'w scan likelihood, w_best is {w_best:.5f}')
-        plt.legend()
-        plt.savefig(self.output()["comparison_plot"].path)
 
         # save metadata
         metadata = {"w_best": w_best, "w_true": w_true, "likelihood_scan_list": likelihood_scan_list, 
                     "likelihood_scan_list_std": likelihood_scan_list_std, "likelihood_interpolate": likelihood_interpolate}
         with open(self.output()["metadata"].path, 'w') as f:
             json.dump(metadata, f, cls=NumpyEncoder)
+
+
+        # plot
+        self.output()["comparison_plot"].parent.touch()
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        with PdfPages(self.output()["comparison_plot"].path) as pdf:
+
+            # plot comparison
+            f = plt.figure()
+            plt.plot(np.log10(w_scan_list), likelihood_scan_list, color='r', label='w_scan result')
+            plt.fill_between(np.log10(w_scan_list), np.array(likelihood_scan_list) - np.array(likelihood_scan_list_std),
+                                np.array(likelihood_scan_list) + np.array(likelihood_scan_list_std), color='r', alpha=0.2)
+
+            plt.plot(np.log10(w_scan_range), likelihood_interpolate, color='blue', label='interpolated result')
+            plt.fill_between(np.log10(w_scan_range), likelihood_interpolate - likelihood_interpolate_std, 
+                            likelihood_interpolate + likelihood_interpolate_std, color='blue', alpha=0.2)
+
+            plt.axvline(np.log10(w_true), color='black', label='w_true')
+            plt.scatter(np.log10(w_best), max(likelihood_scan_list), color='black', label='w_best')
+
+            # draw 95 CI cut
+            plt.plot(np.log10(w_scan_range), np.ones_like(w_scan_range) * likelihood_interpolate_95, color='black', linestyle='--', label='95% CI')
+
+            plt.xlabel('log10(w)')
+            plt.ylabel('likelihood')
+            plt.title(f'w scan likelihood, w_best is {w_best:.5f}')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+            # plot likelihood scan
+            f = plt.figure()
+            plt.plot(np.log10(w_scan_list), likelihood_scan_list, color='r', label='w_scan result')
+            plt.fill_between(np.log10(w_scan_list), np.array(likelihood_scan_list) - np.array(likelihood_scan_list_std),
+                                np.array(likelihood_scan_list) + np.array(likelihood_scan_list_std), color='r', alpha=0.2)
+            
+            plt.axvline(np.log10(w_true), color='black', label='w_true')
+            plt.scatter(np.log10(w_best), max(likelihood_scan_list), color='black', label='w_best')
+
+            # draw 95 CI cut
+            plt.plot(np.log10(w_scan_range), np.ones_like(w_scan_range) * likelihood_interpolate_95, color='black', linestyle='--', label='95% CI')
+
+            plt.xlabel('log10(w)')
+            plt.ylabel('likelihood')
+            plt.title(f'w scan likelihood, w_best is {w_best:.5f}')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+            # plot interpolated likelihood
+            f = plt.figure()
+            plt.plot(np.log10(w_scan_range), likelihood_interpolate, color='blue', label='interpolated result')
+            plt.fill_between(np.log10(w_scan_range), likelihood_interpolate - likelihood_interpolate_std,
+                            likelihood_interpolate + likelihood_interpolate_std, color='blue', alpha=0.2)
+            
+            plt.axvline(np.log10(w_true), color='black', label='w_true')
+            plt.scatter(np.log10(w_best), max(likelihood_scan_list), color='black', label='w_best')
+
+            # draw 95 CI cut
+            plt.plot(np.log10(w_scan_range), np.ones_like(w_scan_range) * likelihood_interpolate_95, color='black', linestyle='--', label='95% CI')
+
+            plt.xlabel('log10(w)')
+            plt.ylabel('likelihood')
+            plt.title(f'interpolated likelihood, w_best is {w_best:.5f}')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+        
 
         
 class GenerateSignals(
