@@ -429,5 +429,135 @@ class InterpolateRANODEoverW(
             json.dump(metadata, f, cls=NumpyEncoder)
 
         
+class GenerateSignals(
+   ScanRANODEoverW, 
+):
+    device = luigi.Parameter(default="cuda")
+    n_signal_samples = luigi.IntParameter(default=10000)
+    
+    def requires(self):
+        model_list = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
-        
+        for index in range(self.scan_number):
+            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_templates)]
+
+        w_scan_results = ScanRANODEoverW.req(self)
+
+        return {
+            "models": model_list,
+            "w_scan_results": w_scan_results,
+        } 
+
+    def output(self):
+        return {
+            "signal_list": self.local_target("signal_list.npy"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+
+        # load previous scan result
+        w_scan_results = self.input()["w_scan_results"]["metadata"].load()
+        w_best = w_scan_results["w_best"]
+        w_best_index = w_scan_results["w_best_index"]
+
+        # load the model at best w
+        model_best_list = []
+        for rand_seed_index in range(len(self.input()["models"][f"model_{w_best_index}"])):
+            model_best_seed_i = self.input()["models"][f"model_{w_best_index}"][rand_seed_index]["sig_models"]
+            for model in model_best_seed_i:
+                model_best_list.append(model.path)
+
+        # define model
+        ranode_path = os.environ.get("RANODE")
+        sys.path.append(ranode_path)
+        from nflow_utils import flows_model_RQS
+
+        # generate signals from each models
+        signal_list = []
+        for model_dir in model_best_list:
+            model_S = flows_model_RQS(device=self.device, num_features=5, context_features=None)
+            model_S.load_state_dict(torch.load(model_dir))
+            model_S.eval()
+
+            signal_samples = model_S.sample(self.n_signal_samples)
+            signal_list.append(signal_samples.cpu().detach().numpy())
+
+            # clean cuda memory
+            del model_S
+            torch.cuda.empty_cache()
+
+        # sample weight is 1 / num_models
+        signal_list = np.array(signal_list)
+        sample_weight = 1 / signal_list.shape[0]
+        sample_weight = np.ones((len(signal_list), self.n_signal_samples, 1)) * sample_weight
+
+        signal_list = np.concatenate([signal_list, sample_weight], axis=-1)
+
+        signal_list = signal_list.reshape(-1, 6)
+
+        self.output()["signal_list"].parent.touch()
+        np.save(self.output()["signal_list"].path, signal_list)
+
+
+class SignalGenerationPlot(
+    GenerateSignals,
+):
+    nbins = luigi.IntParameter(default=41)
+
+    def requires(self):
+        return {
+            "generated_signal_list": GenerateSignals.req(self, n_signal_samples=self.n_sig),
+            "preprocessing": Preprocessing.req(self),
+        }
+
+    def output(self):
+        return self.local_target("signal_plot.pdf")
+
+    @law.decorator.safe_output
+    def run(self):
+
+        generated_signals = np.load(self.input()["generated_signal_list"]["signal_list"].path)
+        generated_signal_features = generated_signals[:, 1:-1]
+        generated_signal_weights = generated_signals[:, -1]
+        generated_signals_mass = generated_signal_features[:, 0]
+
+        # load data
+        data_val_SR_S = np.load(self.input()['preprocessing']['data_val_SR_S'].path)
+        mask_signals_val = data_val_SR_S[:, -1] == 1
+        signal_val = data_val_SR_S[mask_signals_val]
+        signal_val_features = signal_val[:, 1:-1]
+        signal_val_mass = signal_val_features[:, 0]
+
+        mask_bkg_val = data_val_SR_S[:, -1] == 0
+        bkg_val = data_val_SR_S[mask_bkg_val]
+        bkg_val_features = bkg_val[:, 1:-1]
+        bkg_val_mass = bkg_val_features[:, 0]
+
+        # plot
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        self.output().parent.touch()
+        with PdfPages(self.output().path) as pdf:
+            
+            for feature_index in range(signal_val_features.shape[1]):
+
+                bins = np.linspace(bkg_val_features[:, feature_index].min(), bkg_val_features[:, feature_index].max(), self.nbins)
+                                   
+                f = plt.figure()
+                plt.hist(signal_val_features[:, feature_index], bins=bins, alpha=0.5, label='val signal', density=True, histtype='step', lw=3)
+                plt.hist(bkg_val_features[:, feature_index], bins=bins, alpha=0.5, label='val bkg', density=True, histtype='step', lw=3)
+                plt.hist(generated_signal_features[:, feature_index], bins=bins, weights=generated_signal_weights, 
+                         alpha=0.5, label='generated signal', density=True, histtype='step', lw=3)
+                plt.xlabel(f'feature {feature_index}')
+                plt.ylabel('density')
+                plt.title(f'feature {feature_index} distribution, {self.n_sig} signal in samples')
+                plt.legend()
+                plt.yscale('log')
+                pdf.savefig(f)
+                plt.close(f)
+
+
+
