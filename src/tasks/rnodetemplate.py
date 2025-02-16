@@ -20,7 +20,7 @@ class RNodeTemplate(
     BaseTask,
 ):
     
-    device = luigi.Parameter(default="cuda")
+    device = luigi.Parameter(default="cuda:0")
     batchsize = luigi.IntParameter(default=1024)
     epochs = luigi.IntParameter(default=100)
     w_value = luigi.FloatParameter(default=0.05)
