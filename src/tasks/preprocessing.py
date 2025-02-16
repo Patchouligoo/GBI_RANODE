@@ -9,10 +9,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import pickle
 
-from src.utils.law import BaseTask, SignalNumberMixin
+from src.utils.law import BaseTask, SignalStrengthMixin
 
 class Preprocessing(
-    SignalNumberMixin,
+    SignalStrengthMixin,
     BaseTask
 ):
 
@@ -40,16 +40,14 @@ class Preprocessing(
         ranode_path = os.environ.get("RANODE")
 
         sys.path.append(ranode_path)
-        from generate_data_lhc import resample_split
+        from src.data_prep.data_prep import resample_split
         from utils import logit_transform, preprocess_params_transform, preprocess_params_fit
 
-        SR_data, CR_data , true_w, sigma = resample_split(data_dir, n_sig = self.n_sig, resample_seed = 42,resample = True)
+        SR_data, CR_data , true_w = resample_split(data_dir, sig_ratio = self.s_ratio, resample_seed = 42)
 
-        print('SR shape: ', SR_data.shape)
-        print('CR shape: ', CR_data.shape)
-        print('true_w: ', true_w)
-        print('sigma: ', sigma)
-
+        print('true_w in data: ', true_w)
+        print('design w in data: ', self.s_ratio)
+        
         # ----------------------- calculate normalizing parameters -----------------------
         pre_parameters = preprocess_params_fit(CR_data)
         # save pre_parameters

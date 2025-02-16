@@ -8,7 +8,7 @@ from scipy.stats import rv_histogram
 import pickle
 import torch
 
-from src.utils.law import BaseTask, SignalNumberMixin, TemplateRandomMixin, TemplateUncertaintyMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, TemplateUncertaintyMixin
 from src.tasks.preprocessing import Preprocessing
 
 class BkgTemplateTraining(
@@ -21,7 +21,7 @@ class BkgTemplateTraining(
     num_model_to_save = luigi.IntParameter(default=10)
 
     def requires(self):
-        return Preprocessing.req(self, n_sig=0)
+        return Preprocessing.req(self, s_ratio=0.0)
     
     def output(self):
         return {
@@ -104,7 +104,7 @@ class BkgTemplateTraining(
 
 class BkgTemplateChecking(
     TemplateUncertaintyMixin,
-    SignalNumberMixin,
+    SignalStrengthMixin,
     BaseTask, 
 ):
     
@@ -282,7 +282,7 @@ class BkgTemplateChecking(
 
 class PredictBkgProb(
     TemplateUncertaintyMixin,
-    SignalNumberMixin,
+    SignalStrengthMixin,
     BaseTask, 
 ):
     

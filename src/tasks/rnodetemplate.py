@@ -9,14 +9,14 @@ import pickle
 import torch
 import json
 
-from src.utils.law import BaseTask, SignalNumberMixin, TemplateRandomMixin, TemplateUncertaintyMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, TemplateUncertaintyMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder
 
 class RNodeTemplate(
     TemplateRandomMixin,
-    SignalNumberMixin,
+    SignalStrengthMixin,
     BaseTask,
 ):
     
@@ -102,8 +102,6 @@ class RNodeTemplate(
         from utils import inverse_sigmoid
 
         model_S = flows_model_RQS(device=self.device, num_features=5, context_features=None)
-
-        w_ = self.w_value
         optimizer = torch.optim.AdamW(model_S.parameters(),lr=3e-4)
 
         # model scratch
@@ -124,10 +122,10 @@ class RNodeTemplate(
             # create a dummy params since it is not used in r_anode_mass_joint_untransformed function
             params = {'CR':[], 'SR':[]}
 
-            train_loss = r_anode_mass_joint_untransformed(model_S=model_S,model_B=None,w=w_,optimizer=optimizer,data_loader=trainloader, 
+            train_loss = r_anode_mass_joint_untransformed(model_S=model_S,model_B=None,w=self.w_value,optimizer=optimizer,data_loader=trainloader, 
                                                           params=params, device=self.device, mode='train',
                                                           w_train=False)
-            val_loss = r_anode_mass_joint_untransformed(model_S=model_S,model_B=None,w=w_,optimizer=optimizer,data_loader=valloader,
+            val_loss = r_anode_mass_joint_untransformed(model_S=model_S,model_B=None,w=self.w_value,optimizer=optimizer,data_loader=valloader,
                                                         params=params, device=self.device, mode='val',
                                                         w_train=False)
 
@@ -153,14 +151,15 @@ class RNodeTemplate(
             os.rename(scrath_path+'/model_S/model_S_'+str(best_models[i])+'.pt', self.output()["sig_models"][i].path)
 
         # save metadata
-        metadata = {"w_true": w_true, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}
+        metadata = {"w_true": self.s_ratio, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0], "num_test_events": testtensor_S.shape[0]}
+        metadata["min_val_loss_list"] = valloss_list[best_models]
         with open(self.output()["metadata"].path, 'w') as f:
             json.dump(metadata, f, cls=NumpyEncoder)
 
 
 class ScanRANODEoverW(
     TemplateUncertaintyMixin,
-    SignalNumberMixin,
+    SignalStrengthMixin,
     BaseTask,
 ):
     

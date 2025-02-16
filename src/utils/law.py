@@ -5,6 +5,8 @@ import luigi
 import law
 import pandas as pd
 
+from src.utils.utils import str_encode_value
+
 class BaseTask(law.Task):
     """
     Base task which provides some convenience methods
@@ -32,12 +34,13 @@ class BaseTask(law.Task):
         return law.LocalDirectoryTarget(self.local_path(*path), **kwargs)
 
 
-class SignalNumberMixin:
+class SignalStrengthMixin:
 
-    n_sig = luigi.IntParameter(default=1000)
+    # S/(S+B) ratio
+    s_ratio = luigi.FloatParameter(default=0.005)
 
     def store_parts(self):
-        return super().store_parts() + (f"n_sig_{self.n_sig}",)
+        return super().store_parts() + (f"s_ratio_{str_encode_value(self.s_ratio)}",)
 
 
 class TemplateRandomMixin:
