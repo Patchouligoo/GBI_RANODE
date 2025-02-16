@@ -179,10 +179,9 @@ class ScanRANODEoverW(
     BaseTask,
 ):
     
-    w_min = luigi.FloatParameter(default=0.001)
-    w_max = luigi.FloatParameter(default=0.1)
-    scan_number = luigi.IntParameter(default=10)
-    num_model_to_avg = luigi.IntParameter(default=10)
+    w_min = luigi.FloatParameter(default=0.0001)
+    w_max = luigi.FloatParameter(default=0.05)
+    scan_number = luigi.IntParameter(default=20)
 
     def requires(self):
         model_list = {}

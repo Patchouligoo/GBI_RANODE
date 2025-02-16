@@ -53,7 +53,7 @@ class TemplateRandomMixin:
     
 class TemplateUncertaintyMixin:
 
-    num_templates = luigi.IntParameter(default=10)
+    num_templates = luigi.IntParameter(default=5)
 
     def store_parts(self):
         return super().store_parts() + (f"num_templates_{self.num_templates}",)
