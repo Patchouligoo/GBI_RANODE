@@ -21,7 +21,7 @@ class RNodeTemplate(
 ):
     
     device = luigi.Parameter(default="cuda:0")
-    batchsize = luigi.IntParameter(default=1024)
+    batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=100)
     w_value = luigi.FloatParameter(default=0.05)
     num_model_to_save = luigi.IntParameter(default=10)
