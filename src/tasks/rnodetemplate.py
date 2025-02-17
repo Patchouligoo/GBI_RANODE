@@ -165,7 +165,7 @@ class ScanRANODEoverW(
     
     w_min = luigi.FloatParameter(default=0.0001)
     w_max = luigi.FloatParameter(default=0.05)
-    scan_number = luigi.IntParameter(default=20)
+    scan_number = luigi.IntParameter(default=10)
 
     def requires(self):
         model_list = {}
@@ -177,58 +177,36 @@ class ScanRANODEoverW(
         return model_list
     
     def output(self):
-        return {
-            "scan_results": self.local_target("scan_results.json"),
-            "metadata": self.local_target("metadata.json"),
-        }
+        return self.local_target("fitting_result.pdf")
     
     @law.decorator.safe_output
     def run(self):
 
         results = {}
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range_log = np.log10(w_range)
 
-        w_true = self.input()["model_0"][0]["metadata"].load()["w_true"]
+        val_loss_scan = []
 
         for index_w in range(self.scan_number):
 
-            valloss_list = []
+            val_loss_list = []
 
             for index_seed in range(self.num_templates):
-                trainloss_index = np.load(self.input()[f"model_{index_w}"][index_seed]["trainloss_list"].path)
-                valloss_index = np.load(self.input()[f"model_{index_w}"][index_seed]["valloss_list"].path)
+                metadata_w_i = self.input()[f"model_{index_w}"][index_seed]["metadata"].load()
+                min_val_loss_list = metadata_w_i["min_val_loss_list"]
+                val_events_num = metadata_w_i["num_val_events"]
+                val_loss_list.extend(min_val_loss_list)
 
-                # takr min val losses to calculate the avg and std
-                best_models = np.argsort(valloss_index)[:self.num_model_to_avg]
-                min_valloss = valloss_index[best_models]
+            val_loss_scan.append(val_loss_list)
 
-                valloss_list.extend(min_valloss)
+        # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
+        # which is log[mu*P(sig) + (1-mu)*P(bkg)]
+        val_loss_scan = -1 * np.array(val_loss_scan)
 
-            valloss_list = np.array(valloss_list)
-            mean_valloss = np.mean(valloss_list)
-            std_valloss = np.std(valloss_list)
-
-            results[f"model_{index_w}"] = {
-                "w": w_range[index_w],
-                "mean_valloss": mean_valloss,
-                "std_valloss": std_valloss,
-                "valloss_list": valloss_list,
-            }
-
-        self.output()["scan_results"].parent.touch()
-        with open(self.output()["scan_results"].path, 'w') as f:
-            json.dump(results, f, cls=NumpyEncoder)
-
-        val_loss = np.array([results[f"model_{index}"]["mean_valloss"] for index in range(self.scan_number)])
-        val_loss_std = np.array([results[f"model_{index}"]["std_valloss"] for index in range(self.scan_number)])
-
-        # save metadata
-        w_best_index = np.argmin(val_loss)
-        w_best = w_range[w_best_index]
-        metadata = {"w_true": w_true, "w_best": w_best, "w_best_index": w_best_index}
-        with open(self.output()["metadata"].path, 'w') as f:
-            json.dump(metadata, f, cls=NumpyEncoder)
-
+        from src.fitting.fitting import fit_likelihood
+        self.output().parent.touch()
+        fit_likelihood(w_range_log, val_loss_scan, np.log10(self.s_ratio), val_events_num, self.output().path)
 
 
 # class InterpolateRANODEoverW(
