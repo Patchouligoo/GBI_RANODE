@@ -1,50 +1,69 @@
 #import pandas as pd
 import numpy as np
-import os
-import argparse
-#import vector
 from sklearn.model_selection import train_test_split, ShuffleSplit
 from sklearn.utils import shuffle
+from config.configs import SR_MAX, SR_MIN
 
 
-def separate_SB_SR(data, minmass, maxmass):
-    innermask = (data[:, 0] > minmass) & (data[:, 0] < maxmass)
+def separate_SB_SR(data):
+    innermask = (data[:, 0] > SR_MIN) & (data[:, 0] < SR_MAX)
     outermask = ~innermask
     return data[innermask], data[outermask]
 
 
-def resample_split(data_dir, sig_ratio=0.005 , resample_seed = 42,\
-                   minmass = 3.3, maxmass = 3.7):
-    background = np.load(f'{data_dir}/data_bg.npy')
-    signal = np.load(f'{data_dir}/data_sig.npy')
+def resample_split(signal_path, bkg_path, sig_ratio=0.005 , bkg_num_in_sr_data=-1, resample_seed = 42):
+
+    background = np.load(bkg_path)
+    signal = np.load(signal_path)
+
+    # shuffle data
+    background = shuffle(background, random_state=resample_seed)
+    signal = shuffle(signal, random_state=resample_seed)
 
     # split bkg into SR and CR
-    SR_data, CR_data = separate_SB_SR(background, minmass, maxmass)
+    SR_bkg, CR_bkg = separate_SB_SR(background)
 
-    num_bkg_SR = len(SR_data)
-    num_bkg_CR = len(CR_data)
+    SR_sig, CR_sig = separate_SB_SR(signal)
+    # for now we ignore signal in CR
+    
+    # have to make the same number of events as PAWS does for fair comparison
+    if bkg_num_in_sr_data != -1:
+        # this includes 50% for training and 25%, 25% for val and test
+        SR_bkg = SR_bkg[:bkg_num_in_sr_data]
 
-    # compute num signal events to match signal ratio
-    num_sig = int(sig_ratio/(1-sig_ratio) * num_bkg_SR)
-    # randomly choose num_sig signal events
-    np.random.seed(resample_seed)
-    choice = np.random.choice(len(signal), num_sig, replace=False)
-    signal = signal[choice]
+    # split into train, val, test in 50:25:25
+    SR_bkg_train, SR_bkg_val = train_test_split(SR_bkg, test_size=0.5, random_state=resample_seed)
+    SR_bkg_val, SR_bkg_test = train_test_split(SR_bkg_val, test_size=0.5, random_state=resample_seed)
+    len_train_val = len(SR_bkg_train) + len(SR_bkg_val)
+
+    # calculate the amount of signal we inject
+    num_sig = int(sig_ratio/(1-sig_ratio) * len_train_val)
+    
+    SR_sig_injected = SR_sig[:num_sig]
+    SR_sig_testset = SR_sig[num_sig:][:50000] # take 50k for testing
 
     # concatenate background and signal
-    SR_data = np.concatenate((SR_data, signal),axis=0)
-    SR_data = shuffle(SR_data, random_state=resample_seed)
+    SR_data_trainval = np.concatenate((SR_bkg_train, SR_bkg_val, SR_sig_injected),axis=0)
+    SR_data_trainval = shuffle(SR_data_trainval, random_state=resample_seed)
+    SR_data_train, SR_data_val = train_test_split(SR_data_trainval, test_size=1.0/3, random_state=resample_seed)
 
-    CR_data = shuffle(CR_data, random_state=resample_seed)
-    
-    S = SR_data[SR_data[:, -1]==1]
-    B = SR_data[SR_data[:, -1]==0]
+    SR_data_test = np.concatenate((SR_bkg_test, SR_sig_testset),axis=0)
 
-    true_w = len(S)/(len(B)+len(S))
-    
-    print('SR shape: ', SR_data.shape)
-    print("num sig in SR: ", len(S))
-    print("num bkg in SR: ", len(B))
-    print('CR shape: ', CR_data.shape)
+    true_mu_train = (SR_data_train[:, -1]==1).sum() / len(SR_data_train)
+    true_mu_val = (SR_data_val[:, -1]==1).sum() / len(SR_data_val)
 
-    return SR_data, CR_data, true_w
+    print('SR train shape: ', SR_data_train.shape)
+    print('SR train num sig: ', (SR_data_train[:, -1]==1).sum())
+    print('SR train true mu: ', true_mu_train)
+
+    print('SR val shape: ', SR_data_val.shape)
+    print('SR val true mu: ', true_mu_val)
+    print('SR val num sig: ', (SR_data_val[:, -1]==1).sum())
+
+    print('SR test shape: ', SR_data_test.shape)
+    print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
+
+    print('CR shape: ', CR_bkg.shape)
+
+    return SR_data_train, SR_data_val, SR_data_test, CR_bkg
+

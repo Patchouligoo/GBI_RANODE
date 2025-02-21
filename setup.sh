@@ -25,7 +25,7 @@ action() {
     mkdir -p $SCRATCH_DIR
 
     # define data directory
-    export DATA_DIR="${this_dir}/data/lhco"
+    export DATA_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/"
 
     # add submodules to the path
     export RANODE="${this_dir}/submodules/RANODE/src"
