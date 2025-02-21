@@ -54,16 +54,11 @@ class BkgTemplateTraining(
         valloader = torch.utils.data.DataLoader(val_tensor, batch_size=self.batchsize*5, shuffle=False)
 
         # define model 
-        ranode_path = os.environ.get("RANODE")
-        sys.path.append(ranode_path)
-        from density_estimator import DensityEstimator
-        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
+        from src.models.model_B import DensityEstimator, anode
+        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
         
         model_B = DensityEstimator(config_file, eval_mode=False, device=self.device)
         
-        # define training
-        from nflow_utils import anode
-
         trainloss_list=[]
         valloss_list=[]
         scrath_path = os.environ.get("SCRATCH_DIR")
@@ -164,10 +159,8 @@ class BkgTemplateChecking(
         sampled_CR_events = [] 
 
         # ----------------------------------- load all models and make prediction --------------------------------
-        ranode_path = os.environ.get("RANODE")
-        sys.path.append(ranode_path)
-        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
-        from density_estimator import DensityEstimator
+        from src.models.model_B import DensityEstimator
+        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
         
         for seed_i in range(self.num_templates):
             for model_epoch_j in range(self.num_model_to_save):
@@ -305,10 +298,9 @@ class PredictBkgProb(
     @law.decorator.safe_output
     def run(self):
         # load the models
-        ranode_path = os.environ.get("RANODE")
-        sys.path.append(ranode_path)
-        from density_estimator import DensityEstimator
-        config_file = os.path.join(os.path.dirname(ranode_path), "scripts", "DE_MAF_model.yml")
+        from src.models.model_B import DensityEstimator, anode
+        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
+
         model_Bs = []
 
         for i in range(self.num_templates):
