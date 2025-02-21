@@ -2,6 +2,7 @@ import os, sys
 import importlib
 import luigi
 import law
+import json
 import numpy as np
 import pandas as pd
 from scipy.stats import rv_histogram
@@ -217,9 +218,11 @@ class BkgTemplateChecking(
                 model_Bs.append(model_B)
 
         # load the sample to compare with
-        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path) # with background only
-        SR_mass_hist = np.load(self.input()["preprocessed_data"]["SR_mass_hist"].path)
-        SR_mass_bins = np.load(self.input()["preprocessed_data"]["SR_mass_bins"].path)
+        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_model_B"].path) # with background only
+
+        with open(self.input()["preprocessed_data"]["SR_mass_hist"].path, 'r') as f:
+            SR_mass_hist = json.load(f)["hist"]
+            SR_mass_bins = json.load(f)["bins"]
 
         # generate SR events using the model with condition from data_train_SR_B
         mass_cond_SR = data_train_SR_B[:,0]
@@ -313,11 +316,11 @@ class PredictBkgProb(
                 model_Bs.append(model_B)
 
         # load the sample to compare with
-        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_B"].path)
+        data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_model_B"].path)
         traintensor_SR_B = torch.from_numpy(data_train_SR_B.astype('float32')).to(self.device)
-        data_val_SR_B = np.load(self.input()["preprocessed_data"]["data_val_SR_B"].path)
+        data_val_SR_B = np.load(self.input()["preprocessed_data"]["data_val_SR_model_B"].path)
         valtensor_SR_B = torch.from_numpy(data_val_SR_B.astype('float32')).to(self.device)
-        data_test_SR_B = np.load(self.input()["preprocessed_data"]["data_test_SR_B"].path)
+        data_test_SR_B = np.load(self.input()["preprocessed_data"]["data_test_SR_model_B"].path)
         testtensor_SR_B = torch.from_numpy(data_test_SR_B.astype('float32')).to(self.device)
 
         # get avg probility of 10 models
