@@ -27,8 +27,6 @@ action() {
     # define data directory
     export DATA_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/"
 
-    # add submodules to the path
-    export RANODE="${this_dir}/submodules/RANODE/src"
 
 }
 
