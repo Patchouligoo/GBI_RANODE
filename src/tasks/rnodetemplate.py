@@ -155,6 +155,7 @@ class RNodeTemplate(
 class ScanRANODEoverW(
     TemplateUncertaintyMixin,
     SignalStrengthMixin,
+    ProcessMixin,
     BaseTask,
 ):
     
