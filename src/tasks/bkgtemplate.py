@@ -221,8 +221,10 @@ class BkgTemplateChecking(
         data_train_SR_B = np.load(self.input()["preprocessed_data"]["data_train_SR_model_B"].path) # with background only
 
         with open(self.input()["preprocessed_data"]["SR_mass_hist"].path, 'r') as f:
-            SR_mass_hist = json.load(f)["hist"]
-            SR_mass_bins = json.load(f)["bins"]
+            mass_fit = json.load(f)
+
+        SR_mass_hist = np.array(mass_fit["hist"])
+        SR_mass_bins = np.array(mass_fit["bins"])
 
         # generate SR events using the model with condition from data_train_SR_B
         mass_cond_SR = data_train_SR_B[:,0]
