@@ -9,10 +9,10 @@ import pickle
 import torch
 import json
 
-from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, TemplateUncertaintyMixin, ProcessMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, SigTemplateUncertaintyMixin, ProcessMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
-from src.utils.utils import NumpyEncoder
+from src.utils.utils import NumpyEncoder, str_encode_value
 
 class RNodeTemplate(
     TemplateRandomMixin,
@@ -107,13 +107,13 @@ class RNodeTemplate(
         # model scratch
         trainloss_list=[]
         valloss_list=[]
-        scrath_path = os.environ.get("SCRATCH_DIR")
-        if not os.path.exists(scrath_path + "/model_S/"):
-            os.makedirs(scrath_path + "/model_S/")
+        scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/random_seed_{str(self.train_random_seed)}/w_{str_encode_value(self.w_value)}/"
+        if not os.path.exists(scrath_path):
+            os.makedirs(scrath_path)
         else:
             # remove old models
-            for file in os.listdir(scrath_path + "/model_S/"):
-                os.remove(scrath_path + "/model_S/" + file)
+            for file in os.listdir(scrath_path):
+                os.remove(scrath_path + file)
 
 
         # define training
@@ -124,7 +124,7 @@ class RNodeTemplate(
             val_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=self.w_value,optimizer=optimizer,data_loader=valloader,
                                                         device=self.device, mode='val')
 
-            torch.save(model_S.state_dict(), scrath_path+'/model_S/model_S_'+str(epoch)+'.pt')
+            torch.save(model_S.state_dict(), scrath_path+'/model_S_epoch_'+str(epoch)+'_w_'+str_encode_value(self.w_value)+'seed_'+str(self.train_random_seed)+'.pt')
 
             trainloss_list.append(train_loss)
             valloss_list.append(val_loss)
@@ -141,7 +141,8 @@ class RNodeTemplate(
         best_models = np.argsort(valloss_list)[:self.num_model_to_save]
         for i in range(self.num_model_to_save):
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
-            os.rename(scrath_path+'/model_S/model_S_'+str(best_models[i])+'.pt', self.output()["sig_models"][i].path)
+            model_name = scrath_path+'/model_S_epoch_'+str(best_models[i])+'_w_'+str_encode_value(self.w_value)+'seed_'+str(self.train_random_seed)+'.pt'
+            os.rename(model_name, self.output()["sig_models"][i].path)
 
         # save metadata
         metadata = {"w_true": self.s_ratio, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}
@@ -153,7 +154,7 @@ class RNodeTemplate(
 
 
 class ScanRANODEoverW(
-    TemplateUncertaintyMixin,
+    SigTemplateUncertaintyMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -164,11 +165,18 @@ class ScanRANODEoverW(
     scan_number = luigi.IntParameter(default=10)
 
     def requires(self):
+
+        # clean the scratch directory
+        import shutil
+        scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/"
+        if os.path.exists(scrath_path):
+            shutil.rmtree(scrath_path)
+
         model_list = {}
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
         for index in range(self.scan_number):
-            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_templates)]
+            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_sig_templates)]
 
         return model_list
     
@@ -178,26 +186,30 @@ class ScanRANODEoverW(
     @law.decorator.safe_output
     def run(self):
 
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)[2:]
         w_range_log = np.log10(w_range)
 
         val_loss_scan = []
 
-        for index_w in range(self.scan_number):
+        for index_w in range(self.scan_number)[2:]:
 
             val_loss_list = []
 
-            for index_seed in range(self.num_templates):
+            for index_seed in range(self.num_sig_templates):
                 metadata_w_i = self.input()[f"model_{index_w}"][index_seed]["metadata"].load()
-                min_val_loss_list = metadata_w_i["min_val_loss_list"]
+                min_val_loss_list = metadata_w_i["min_val_loss_list"][:5]
                 val_events_num = metadata_w_i["num_val_events"]
                 val_loss_list.extend(min_val_loss_list)
 
             val_loss_scan.append(val_loss_list)
 
+        # pick the top 20% models with smallest loss
+        val_loss_scan = np.array(val_loss_scan)
+        val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :10]
+
         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
-        val_loss_scan = -1 * np.array(val_loss_scan)
+        val_loss_scan = -1 * val_loss_scan
 
         from src.fitting.fitting import fit_likelihood
         self.output().parent.touch()

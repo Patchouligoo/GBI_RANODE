@@ -70,9 +70,16 @@ class TemplateRandomMixin:
         return super().store_parts() + (f"train_seed_{self.train_random_seed}",)
     
     
-class TemplateUncertaintyMixin:
+class BkgTemplateUncertaintyMixin:
 
-    num_templates = luigi.IntParameter(default=5)
+    num_bkg_templates = luigi.IntParameter(default=5)
 
     def store_parts(self):
-        return super().store_parts() + (f"num_templates_{self.num_templates}",)
+        return super().store_parts() + (f"num_templates_{self.num_bkg_templates}",)
+    
+class SigTemplateUncertaintyMixin:
+
+    num_sig_templates = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (f"num_templates_{self.num_sig_templates}",)
