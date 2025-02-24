@@ -87,4 +87,11 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
         pdf.savefig(f)
         plt.close()
 
-    return mu_pred, best_model_index
+    output_metadata = {
+        "mu_pred": mu_pred,
+        "best_model_index": best_model_index,
+        "mu_lowerbound": mu_lowerbound,
+        "mu_upperbound": mu_upperbound,
+    }
+
+    return output_metadata

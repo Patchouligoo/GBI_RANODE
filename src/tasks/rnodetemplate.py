@@ -107,7 +107,9 @@ class CoarseScanRANODEoverW(
 
         from src.fitting.fitting import fit_likelihood
         self.output()["coarse_scan_plot"].parent.touch()
-        mu_pred, best_model_index = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
+        output_metadata = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
+
+        mu_pred = output_metadata["mu_pred"]
 
         # find the w test value closest to the peak likelihood
         w_best_index = np.argmin(np.abs(w_range - mu_pred))
@@ -240,13 +242,20 @@ class FineScanRANODEoverW(
 
         from src.fitting.fitting import fit_likelihood
         self.output()["fine_scan_plot"].parent.touch()
-        mu_pred, best_model_index = fit_likelihood(mu_scan_range, val_loss_scan_mean, val_loss_scan_std, self.s_ratio, val_events_num, self.output()["fine_scan_plot"].path, logbased=False)
+        output_metadata = fit_likelihood(mu_scan_range, val_loss_scan_mean, val_loss_scan_std, self.s_ratio, val_events_num, self.output()["fine_scan_plot"].path, logbased=False)
+
+        mu_pred = output_metadata["mu_pred"]
+        best_model_index = output_metadata["best_model_index"]
+        mu_lowerbound = output_metadata["mu_lowerbound"]
+        mu_upperbound = output_metadata["mu_upperbound"]
 
         # scan result
         scan_result = {
             "mu_true": self.s_ratio,
             "mu_pred": mu_pred,
             "best_model_index": best_model_index,
+            "mu_lowerbound": mu_lowerbound,
+            "mu_upperbound": mu_upperbound,
         }
 
         with open(self.output()["scan_result"].path, 'w') as f:
