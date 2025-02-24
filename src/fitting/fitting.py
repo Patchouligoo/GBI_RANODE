@@ -31,6 +31,8 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
     max_likelihood = y_pred[arg_max_likelihood]
     mu_pred = np.power(10, x_pred[arg_max_likelihood])
     mu_true = np.power(10, w_true)
+    # get the cloest mu value to the pred mu in x_values
+    best_model_index = np.argmin(np.abs(x_values - x_pred[arg_max_likelihood]))
 
     # 95% CI of the peak
     arg_max_y_lower_bound = np.argmax(y_lower_bound)
@@ -67,4 +69,4 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
         pdf.savefig(f)
         plt.close()
 
-    return mu_pred
+    return mu_pred, best_model_index

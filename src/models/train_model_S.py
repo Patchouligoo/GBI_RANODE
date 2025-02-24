@@ -112,3 +112,36 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
 
     with open(output_dir["metadata"].path, 'w') as f:
         json.dump(metadata, f, cls=NumpyEncoder)
+
+
+def pred_model_S(model_dir, data_train_SR_S, batch_size=2048, device='cuda'):
+
+    # data to train model_S
+    testtensor_S = torch.from_numpy(data_train_SR_S.astype('float32')).to(device)
+
+    # define training input tensors
+    test_tensor = torch.utils.data.TensorDataset(testtensor_S)
+    test_loader = torch.utils.data.DataLoader(test_tensor, batch_size=batch_size*5, shuffle=False)
+
+    # define model
+    from src.models.model_S import flows_model_RQS
+
+    prob_S = []
+
+    model_S = flows_model_RQS(device=device, num_features=5, context_features=None)
+
+    model_S.load_state_dict(torch.load(model_dir, weights_only=True))
+
+    model_S.eval()
+
+    for batch_idx, data in enumerate(test_loader):
+        data_SR = data[0].to(device)
+        model_S_log_prob = model_S.log_prob(data_SR[:,:-1])
+
+        model_S_prob = torch.exp(model_S_log_prob)
+
+        prob_S.append(model_S_prob.cpu().detach().numpy())
+
+    prob_S = np.concatenate(prob_S, axis=0)
+
+    return prob_S

@@ -113,7 +113,7 @@ class CoarseScanRANODEoverW(
 
         from src.fitting.fitting import fit_likelihood
         self.output()["coarse_scan_plot"].parent.touch()
-        mu_pred = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
+        mu_pred, best_model_index = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
 
         # find the w test value closest to the peak likelihood
         w_best_index = np.argmin(np.abs(w_range - mu_pred))
@@ -121,10 +121,6 @@ class CoarseScanRANODEoverW(
         # find the index - 2, index + 2 w values, return boundary w values if index is at the boundary
         w_fine_scane_range_left = w_range[max(0, w_best_index-2)]
         w_fine_scane_range_right = w_range[min(self.scan_number-1, w_best_index+2)]
-        # get all w values already scanned within this range
-        w_dp_within_range = w_range[(w_range >= w_fine_scane_range_left) & (w_range <= w_fine_scane_range_right)]
-        w_dp_mean_within_range = val_loss_scan_mean[(w_range >= w_fine_scane_range_left) & (w_range <= w_fine_scane_range_right)]
-        w_dp_std_within_range = val_loss_scan_std[(w_range >= w_fine_scane_range_left) & (w_range <= w_fine_scane_range_right)]
 
         peak_info = {
             "mu_true": self.s_ratio,
@@ -132,9 +128,6 @@ class CoarseScanRANODEoverW(
             "mu_best": w_best,
             "mu_fine_scan_range_left": w_fine_scane_range_left,
             "mu_fine_scan_range_right": w_fine_scane_range_right,
-            "mu_dp_within_range": w_dp_within_range.tolist(),
-            "mu_dp_mean_within_range": w_dp_mean_within_range.tolist(),
-            "mu_dp_std_within_range": w_dp_std_within_range.tolist(),
         }
 
         with open(self.output()["peak_info"].path, 'w') as f:
@@ -218,6 +211,7 @@ class FineScanRANODEoverW(
     
     def output(self):
         return {
+            "scan_result": self.local_target("scan_result.json"),
             "fine_scan_plot": self.local_target("fitting_result.pdf"),
         }
     
@@ -230,10 +224,6 @@ class FineScanRANODEoverW(
         mu_lower = peak_info["mu_fine_scan_range_left"]
         mu_upper = peak_info["mu_fine_scan_range_right"]
         mu_scan_range = np.logspace(np.log10(mu_lower), np.log10(mu_upper), self.num_fine_scan+2)[1:-1]
-
-        mu_dp_coarse_scan = peak_info["mu_dp_within_range"]
-        mu_dp_mean_coarse_scan = peak_info["mu_dp_mean_within_range"]
-        mu_dp_std_coarse_scan = peak_info["mu_dp_std_within_range"]
 
         val_loss_scan = []
 
@@ -259,22 +249,133 @@ class FineScanRANODEoverW(
         val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
         val_loss_scan_std = np.std(val_loss_scan, axis=1)
 
-        # combine coarse scan and fine scan in order of mu
-        mu_scan_range = np.concatenate([mu_dp_coarse_scan, mu_scan_range])
-        val_loss_scan_mean = np.concatenate([mu_dp_mean_coarse_scan, val_loss_scan_mean])
-        val_loss_scan_std = np.concatenate([mu_dp_std_coarse_scan, val_loss_scan_std])
-
-        # sort the mu values
-        sort_index = np.argsort(mu_scan_range)
-        mu_scan_range = mu_scan_range[sort_index]
-        val_loss_scan_mean = val_loss_scan_mean[sort_index]
-        val_loss_scan_std = val_loss_scan_std[sort_index]
-
         mu_scan_range_log = np.log10(mu_scan_range)
 
         from src.fitting.fitting import fit_likelihood
         self.output()["fine_scan_plot"].parent.touch()
-        mu_pred = fit_likelihood(mu_scan_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
+        mu_pred, best_model_index = fit_likelihood(mu_scan_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
+
+        # scan result
+        scan_result = {
+            "mu_true": self.s_ratio,
+            "mu_pred": mu_pred,
+            "best_model_index": best_model_index,
+        }
+
+        with open(self.output()["scan_result"].path, 'w') as f:
+            json.dump(scan_result, f, cls=NumpyEncoder)
+
+
+class PerformanceEvaluation(
+    SigTemplateUncertaintyMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+    
+    num_fine_scan = luigi.IntParameter(default=10)
+    device = luigi.Parameter(default="cuda")
+    
+    def requires(self):
+
+        model_list = {}
+        for fine_scan_index in range(self.num_fine_scan):
+            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+42)) for i in range(self.num_sig_templates)]
+
+        return {
+            "fine_scan_models": model_list,
+            "fine_scan": FineScanRANODEoverW.req(self),
+            "test_data": Preprocessing.req(self),
+            "bkgprob": PredictBkgProb.req(self),
+        }
+
+    def output(self):
+        return {
+            "performance_plot": self.local_target("performance_plot.pdf"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        # load the best models
+        with open(self.input()["fine_scan"]["scan_result"].path, 'r') as f:
+            scan_result = json.load(f)
+
+        best_model_index = scan_result["best_model_index"]
+
+        model_best_list = []
+        model_loss_list = []
+
+        for rand_seed_index in range(self.num_sig_templates):
+            model_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index}"][rand_seed_index]["sig_models"]
+            metadata_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index}"][rand_seed_index]["metadata"].load()
+
+            for model in model_best_seed_i:
+                model_best_list.append(model.path)
+            model_loss_list.extend(metadata_best_seed_i["min_val_loss_list"])
+
+        # select 20 best models
+        model_loss_list = np.array(model_loss_list)
+        model_loss_list = np.sort(model_loss_list)[:20]
+        model_best_list = model_best_list[:20]
+
+        # load test data
+        data_test_SR_model_S = np.load(self.input()['test_data']['data_test_SR_model_S'].path)
+
+        # load bkg prob
+        data_test_SR_prob_B = np.load(self.input()['bkgprob']['log_B_test'].path)
+        data_test_SR_prob_B = np.exp(data_test_SR_prob_B.flatten())
+
+        from src.models.train_model_S import pred_model_S
+
+        prob_S_list = []
+
+        for model_dir in model_best_list:
+            prob_S = pred_model_S(model_dir, data_test_SR_model_S, batch_size=2048, device=self.device)
+            prob_S_list.append(prob_S)
+
+        prob_S_list = np.array(prob_S_list)
+        prob_S_list = np.mean(prob_S_list, axis=0)
+
+        prob_anomaly = prob_S_list / (1e-10 + data_test_SR_prob_B) + 1e-10
+        prob_anomaly = np.log(prob_anomaly)
+        # adjust to 0-1
+        prob_anomaly = (prob_anomaly - prob_anomaly.min()) / (prob_anomaly.max() - prob_anomaly.min())
+
+        truth_label = data_test_SR_model_S[:, -1].flatten()
+
+        from sklearn.metrics import roc_curve, roc_auc_score
+
+        fpr, tpr, _ = roc_curve(truth_label, prob_anomaly)
+        sic = tpr / np.sqrt(fpr)
+
+        # plot
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        self.output()["performance_plot"].parent.touch()
+
+        with PdfPages(self.output()["performance_plot"].path) as pdf:
+            bins=np.linspace(0, 1, 100)
+            f = plt.figure()
+            plt.hist(prob_anomaly[truth_label == 0], bins=bins, label='bkg', density=True, histtype='step', lw=3)
+            plt.hist(prob_anomaly[truth_label == 1], bins=bins, label='sig', density=True, histtype='step', lw=3)
+            plt.xlabel('anomaly score')
+            plt.ylabel('num events')
+            plt.title('Anomaly score distribution')
+            plt.legend()
+            plt.yscale('log')
+            pdf.savefig(f)
+            plt.close(f)
+
+            f = plt.figure()
+            plt.plot(tpr, sic, label='SIC')
+            plt.xlabel('TPR')
+            plt.ylabel('SIC')
+            plt.title('SIC vs TPR')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
 
         
 # class GenerateSignals(
