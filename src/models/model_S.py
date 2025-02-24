@@ -54,8 +54,8 @@ def flows_model_RQS(num_layers = 6, num_features=4, num_blocks = 2,
 
 
 def r_anode_mass_joint_untransformed(model_S,w, \
-                 optimizer, data_loader,scheduler=False ,device='cpu', 
-                 mode='train'):
+                 optimizer, data_loader ,device='cpu', 
+                 mode='train', scheduler=None):
     
     n_nans = 0
     if mode == 'train':
@@ -72,12 +72,9 @@ def r_anode_mass_joint_untransformed(model_S,w, \
         model_B_log_prob = data[1].to(device).flatten()
         mass_density_bkg = data[2].to(device).flatten()
 
-
-
         if mode == 'train':
             optimizer.zero_grad()
 
-        
         model_S_log_prob = model_S.log_prob(data_SR[:,:-1])
 
         if batch_idx==0:
@@ -108,7 +105,7 @@ def r_anode_mass_joint_untransformed(model_S,w, \
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model_S.parameters(),1)
             optimizer.step()
-            if scheduler:
+            if scheduler is not None:
                 scheduler.step()
     
 
