@@ -56,3 +56,5 @@ def fit_likelihood(x_values, y_values, w_true, events_num, output_path):
         plt.legend()
         pdf.savefig(f)
         plt.close()
+
+    return mu_pred

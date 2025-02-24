@@ -153,7 +153,7 @@ class RNodeTemplate(
             json.dump(metadata, f, cls=NumpyEncoder)
 
 
-class ScanRANODEoverW(
+class CoarseScanRANODEoverW(
     SigTemplateUncertaintyMixin,
     SignalStrengthMixin,
     ProcessMixin,
@@ -181,17 +181,20 @@ class ScanRANODEoverW(
         return model_list
     
     def output(self):
-        return self.local_target("fitting_result.pdf")
+        return {
+            "coarse_scan_plot": self.local_target("fitting_result.pdf"),
+            "peak_info": self.local_target("peak_info.json"),
+        }
     
     @law.decorator.safe_output
     def run(self):
 
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)[2:]
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
         w_range_log = np.log10(w_range)
 
         val_loss_scan = []
 
-        for index_w in range(self.scan_number)[2:]:
+        for index_w in range(self.scan_number):
 
             val_loss_list = []
 
@@ -212,9 +215,26 @@ class ScanRANODEoverW(
         val_loss_scan = -1 * val_loss_scan
 
         from src.fitting.fitting import fit_likelihood
-        self.output().parent.touch()
-        fit_likelihood(w_range_log, val_loss_scan, np.log10(self.s_ratio), val_events_num, self.output().path)
+        self.output()["coarse_scan_plot"].parent.touch()
+        mu_pred = fit_likelihood(w_range_log, val_loss_scan, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
 
+        # find the w test value closest to the peak likelihood
+        w_best_index = np.argmin(np.abs(w_range - mu_pred))
+        w_best = w_range[w_best_index]
+        # find the index - 2, index + 2 w values, return boundary w values if index is at the boundary
+        w_fine_scane_range_left = w_range[max(0, w_best_index-2)]
+        w_fine_scane_range_right = w_range[min(self.scan_number-1, w_best_index+2)]
+
+        peak_info = {
+            "mu_true": self.s_ratio,
+            "mu_pred": mu_pred,
+            "mu_best": w_best,
+            "mu_fine_scan_range_left": w_fine_scane_range_left,
+            "mu_fine_scan_range_right": w_fine_scane_range_right,
+        }
+
+        with open(self.output()["peak_info"].path, 'w') as f:
+            json.dump(peak_info, f, cls=NumpyEncoder)
 
         
 
