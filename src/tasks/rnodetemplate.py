@@ -101,7 +101,7 @@ class CoarseScanRANODEoverW(
 
             val_loss_scan.append(val_loss_list)
 
-        # pick the top 20% models with smallest loss
+        # pick the top 20 models with smallest loss
         val_loss_scan = np.array(val_loss_scan)
         val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
 
