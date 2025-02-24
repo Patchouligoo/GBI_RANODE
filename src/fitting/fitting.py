@@ -12,8 +12,8 @@ def fit_likelihood(x_values, y_values, w_true, events_num, output_path):
     y_values_std = np.std(y_values, axis=-1)
 
     # define the kernel
-    kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2)) + WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
-    gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=10)
+    kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2)) #+ WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=100)
     gp.fit(x_values, y_values_mean)
 
     # --- Make Predictions on a Fine Grid ---
