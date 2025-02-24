@@ -1,0 +1,114 @@
+import os, sys
+import importlib
+import luigi
+import law
+import numpy as np
+import pandas as pd
+from scipy.stats import rv_histogram
+import torch
+import json
+from src.utils.utils import NumpyEncoder, str_encode_value
+
+def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=100, num_model_to_save=10, train_random_seed=42, device='cuda'):
+    # fixing random seed
+    torch.manual_seed(train_random_seed)
+    
+    print("loading data")
+    # load data
+    data_train_SR_B = np.load(input_dir['preprocessing']['data_train_SR_model_B'].path)
+    data_val_SR_B = np.load(input_dir['preprocessing']['data_val_SR_model_B'].path)
+    # bkg prob predicted by model_B
+    data_train_SR_B_prob = np.load(input_dir['bkgprob']['log_B_train'].path)
+    data_val_SR_B_prob = np.load(input_dir['bkgprob']['log_B_val'].path)
+    # p(m) for bkg model p(x|m)
+    with open(input_dir['preprocessing']['SR_mass_hist'].path, 'r') as f:
+        mass_hist = json.load(f)
+    SR_mass_hist = np.array(mass_hist['hist'])
+    SR_mass_bins = np.array(mass_hist['bins'])
+    density_back = rv_histogram((SR_mass_hist, SR_mass_bins))
+
+    # data to train model_S
+    data_train_SR_S = np.load(input_dir['preprocessing']['data_train_SR_model_S'].path)
+    data_val_SR_S = np.load(input_dir['preprocessing']['data_val_SR_model_S'].path)
+    # data to train model_S
+    traintensor_S = torch.from_numpy(data_train_SR_S.astype('float32')).to(device)
+    valtensor_S = torch.from_numpy(data_val_SR_S.astype('float32')).to(device)
+    
+    # convert data to torch tensors
+    # log B prob in SR
+    log_B_train_tensor = torch.from_numpy(data_train_SR_B_prob.astype('float32')).to(device)
+    log_B_val_tensor = torch.from_numpy(data_val_SR_B_prob.astype('float32')).to(device)
+
+    # bkg in SR
+    traintensor_B = torch.from_numpy(data_train_SR_B.astype('float32')).to(device)
+    valtensor_B = torch.from_numpy(data_val_SR_B.astype('float32')).to(device)
+    # p(m) for bkg model p(x|m)
+    train_mass_prob_B = torch.from_numpy(density_back.pdf(traintensor_B[:,0].cpu().detach().numpy())).to(device)
+    val_mass_prob_B = torch.from_numpy(density_back.pdf(valtensor_B[:,0].cpu().detach().numpy())).to(device)
+
+    print("data loaded")
+    print("train val data shape: ", traintensor_S.shape, valtensor_S.shape)
+    print("w_true: ", s_ratio)
+
+    # define training input tensors
+    train_tensor = torch.utils.data.TensorDataset(traintensor_S, log_B_train_tensor, train_mass_prob_B)
+    val_tensor = torch.utils.data.TensorDataset(valtensor_S, log_B_val_tensor, val_mass_prob_B)
+
+    trainloader = torch.utils.data.DataLoader(train_tensor, batch_size=batch_size, shuffle=True)
+
+    test_batch_size=batch_size*5
+    valloader = torch.utils.data.DataLoader(val_tensor, batch_size=test_batch_size, shuffle=False)
+
+    # define model
+    from src.models.model_S import r_anode_mass_joint_untransformed, flows_model_RQS
+
+    model_S = flows_model_RQS(device=device, num_features=5, context_features=None)
+    optimizer = torch.optim.AdamW(model_S.parameters(),lr=3e-4)
+
+    # model scratch
+    trainloss_list=[]
+    valloss_list=[]
+    scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/random_seed_{str(train_random_seed)}/w_{str_encode_value(w_value)}/"
+    if not os.path.exists(scrath_path):
+        os.makedirs(scrath_path)
+    else:
+        # remove old models
+        for file in os.listdir(scrath_path):
+            os.remove(scrath_path + file)
+
+
+    # define training
+    for epoch in range(epoches):
+
+        train_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=w_value,optimizer=optimizer,data_loader=trainloader, 
+                                                        device=device, mode='train')
+        val_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=w_value,optimizer=optimizer,data_loader=valloader,
+                                                    device=device, mode='val')
+
+        torch.save(model_S.state_dict(), scrath_path+'/model_S_epoch_'+str(epoch)+'_w_'+str_encode_value(w_value)+'seed_'+str(train_random_seed)+'.pt')
+
+        trainloss_list.append(train_loss)
+        valloss_list.append(val_loss)
+        print('Epoch: ', epoch, 'Train loss: ', train_loss, 'Val loss: ', val_loss)
+
+    # save train and val loss
+    trainloss_list=np.array(trainloss_list)
+    valloss_list=np.array(valloss_list)
+    output_dir["trainloss_list"].parent.touch()
+    np.save(output_dir["trainloss_list"].path, trainloss_list)
+    np.save(output_dir["valloss_list"].path, valloss_list)
+
+    # save best models with lowest val loss
+    best_models = np.argsort(valloss_list)[:num_model_to_save]
+    for i in range(num_model_to_save):
+        print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
+        model_name = scrath_path+'/model_S_epoch_'+str(best_models[i])+'_w_'+str_encode_value(w_value)+'seed_'+str(train_random_seed)+'.pt'
+        os.rename(model_name, output_dir["sig_models"][i].path)
+
+    # save metadata
+    metadata = {"w_true": s_ratio, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}
+    metadata["min_val_loss_list"] = valloss_list[best_models]
+    metadata["min_train_loss_list"] = trainloss_list[best_models]
+
+    with open(output_dir["metadata"].path, 'w') as f:
+        json.dump(metadata, f, cls=NumpyEncoder)

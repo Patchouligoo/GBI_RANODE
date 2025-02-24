@@ -4,9 +4,6 @@ import luigi
 import law
 import numpy as np
 import pandas as pd
-from scipy.stats import rv_histogram
-import pickle
-import torch
 import json
 
 from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, SigTemplateUncertaintyMixin, ProcessMixin
@@ -23,7 +20,7 @@ class RNodeTemplate(
     
     device = luigi.Parameter(default="cuda:0")
     batchsize = luigi.IntParameter(default=2048)
-    epochs = luigi.IntParameter(default=100)
+    epoches = luigi.IntParameter(default=100)
     w_value = luigi.FloatParameter(default=0.05)
     num_model_to_save = luigi.IntParameter(default=10)
 
@@ -47,110 +44,8 @@ class RNodeTemplate(
     
     @law.decorator.safe_output 
     def run(self):
-
-        # fixing random seed
-        torch.manual_seed(self.train_random_seed)
-        
-        print("loading data")
-        # load data
-        data_train_SR_B = np.load(self.input()['preprocessing']['data_train_SR_model_B'].path)
-        data_val_SR_B = np.load(self.input()['preprocessing']['data_val_SR_model_B'].path)
-        # bkg prob predicted by model_B
-        data_train_SR_B_prob = np.load(self.input()['bkgprob']['log_B_train'].path)
-        data_val_SR_B_prob = np.load(self.input()['bkgprob']['log_B_val'].path)
-        # p(m) for bkg model p(x|m)
-        with open(self.input()['preprocessing']['SR_mass_hist'].path, 'r') as f:
-            mass_hist = json.load(f)
-        SR_mass_hist = np.array(mass_hist['hist'])
-        SR_mass_bins = np.array(mass_hist['bins'])
-        density_back = rv_histogram((SR_mass_hist, SR_mass_bins))
-
-        # data to train model_S
-        data_train_SR_S = np.load(self.input()['preprocessing']['data_train_SR_model_S'].path)
-        data_val_SR_S = np.load(self.input()['preprocessing']['data_val_SR_model_S'].path)
-        # data to train model_S
-        traintensor_S = torch.from_numpy(data_train_SR_S.astype('float32')).to(self.device)
-        valtensor_S = torch.from_numpy(data_val_SR_S.astype('float32')).to(self.device)
-        
-        # convert data to torch tensors
-        # log B prob in SR
-        log_B_train_tensor = torch.from_numpy(data_train_SR_B_prob.astype('float32')).to(self.device)
-        log_B_val_tensor = torch.from_numpy(data_val_SR_B_prob.astype('float32')).to(self.device)
-
-        # bkg in SR
-        traintensor_B = torch.from_numpy(data_train_SR_B.astype('float32')).to(self.device)
-        valtensor_B = torch.from_numpy(data_val_SR_B.astype('float32')).to(self.device)
-        # p(m) for bkg model p(x|m)
-        train_mass_prob_B = torch.from_numpy(density_back.pdf(traintensor_B[:,0].cpu().detach().numpy())).to(self.device)
-        val_mass_prob_B = torch.from_numpy(density_back.pdf(valtensor_B[:,0].cpu().detach().numpy())).to(self.device)
-
-        print("data loaded")
-        print("train val data shape: ", traintensor_S.shape, valtensor_S.shape)
-        print("w_true: ", self.s_ratio)
-
-        # define training input tensors
-        train_tensor = torch.utils.data.TensorDataset(traintensor_S, log_B_train_tensor, train_mass_prob_B)
-        val_tensor = torch.utils.data.TensorDataset(valtensor_S, log_B_val_tensor, val_mass_prob_B)
-
-        batch_size = self.batchsize
-        trainloader = torch.utils.data.DataLoader(train_tensor, batch_size=batch_size, shuffle=True)
-
-        test_batch_size=batch_size*5
-        valloader = torch.utils.data.DataLoader(val_tensor, batch_size=test_batch_size, shuffle=False)
-
-        # define model
-        from src.models.model_S import r_anode_mass_joint_untransformed, flows_model_RQS
-
-        model_S = flows_model_RQS(device=self.device, num_features=5, context_features=None)
-        optimizer = torch.optim.AdamW(model_S.parameters(),lr=3e-4)
-
-        # model scratch
-        trainloss_list=[]
-        valloss_list=[]
-        scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/random_seed_{str(self.train_random_seed)}/w_{str_encode_value(self.w_value)}/"
-        if not os.path.exists(scrath_path):
-            os.makedirs(scrath_path)
-        else:
-            # remove old models
-            for file in os.listdir(scrath_path):
-                os.remove(scrath_path + file)
-
-
-        # define training
-        for epoch in range(self.epochs):
-
-            train_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=self.w_value,optimizer=optimizer,data_loader=trainloader, 
-                                                          device=self.device, mode='train')
-            val_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=self.w_value,optimizer=optimizer,data_loader=valloader,
-                                                        device=self.device, mode='val')
-
-            torch.save(model_S.state_dict(), scrath_path+'/model_S_epoch_'+str(epoch)+'_w_'+str_encode_value(self.w_value)+'seed_'+str(self.train_random_seed)+'.pt')
-
-            trainloss_list.append(train_loss)
-            valloss_list.append(val_loss)
-            print('Epoch: ', epoch, 'Train loss: ', train_loss, 'Val loss: ', val_loss)
-
-        # save train and val loss
-        trainloss_list=np.array(trainloss_list)
-        valloss_list=np.array(valloss_list)
-        self.output()["trainloss_list"].parent.touch()
-        np.save(self.output()["trainloss_list"].path, trainloss_list)
-        np.save(self.output()["valloss_list"].path, valloss_list)
-
-        # save best models with lowest val loss
-        best_models = np.argsort(valloss_list)[:self.num_model_to_save]
-        for i in range(self.num_model_to_save):
-            print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
-            model_name = scrath_path+'/model_S_epoch_'+str(best_models[i])+'_w_'+str_encode_value(self.w_value)+'seed_'+str(self.train_random_seed)+'.pt'
-            os.rename(model_name, self.output()["sig_models"][i].path)
-
-        # save metadata
-        metadata = {"w_true": self.s_ratio, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}
-        metadata["min_val_loss_list"] = valloss_list[best_models]
-        metadata["min_train_loss_list"] = trainloss_list[best_models]
-
-        with open(self.output()["metadata"].path, 'w') as f:
-            json.dump(metadata, f, cls=NumpyEncoder)
+        from src.models.train_model_S import train_model_S
+        train_model_S(self.input(), self.output(), self.s_ratio, self.w_value, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
 
 
 class CoarseScanRANODEoverW(
