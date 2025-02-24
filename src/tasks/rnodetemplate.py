@@ -112,9 +112,9 @@ class CoarseScanRANODEoverW(
         # find the w test value closest to the peak likelihood
         w_best_index = np.argmin(np.abs(w_range - mu_pred))
         w_best = w_range[w_best_index]
-        # find the index - 2, index + 2 w values, return boundary w values if index is at the boundary
-        w_fine_scane_range_left = w_range[max(0, w_best_index-2)]
-        w_fine_scane_range_right = w_range[min(self.scan_number-1, w_best_index+2)]
+        # find the index - 1, index + 1 w values, return boundary w values if index is at the boundary
+        w_fine_scane_range_left = w_range[max(0, w_best_index-1)]
+        w_fine_scane_range_right = w_range[min(self.scan_number-1, w_best_index+1)]
 
         peak_info = {
             "mu_true": self.s_ratio,
@@ -169,7 +169,7 @@ class FineScanRANOD(
         mu_lower = peak_info["mu_fine_scan_range_left"]
         mu_upper = peak_info["mu_fine_scan_range_right"]
 
-        mu_scan_range = np.logspace(np.log10(mu_lower), np.log10(mu_upper), self.num_fine_scan+2)[1:-1]
+        mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
 
         curr_mu = mu_scan_range[self.fine_scan_index]
 
@@ -211,7 +211,7 @@ class FineScanRANODEoverW(
 
         mu_lower = peak_info["mu_fine_scan_range_left"]
         mu_upper = peak_info["mu_fine_scan_range_right"]
-        mu_scan_range = np.logspace(np.log10(mu_lower), np.log10(mu_upper), self.num_fine_scan+2)[1:-1]
+        mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
 
         val_loss_scan = []
 
@@ -237,11 +237,10 @@ class FineScanRANODEoverW(
         val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
         val_loss_scan_std = np.std(val_loss_scan, axis=1)
 
-        mu_scan_range_log = np.log10(mu_scan_range)
 
         from src.fitting.fitting import fit_likelihood
         self.output()["fine_scan_plot"].parent.touch()
-        mu_pred, best_model_index = fit_likelihood(mu_scan_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
+        mu_pred, best_model_index = fit_likelihood(mu_scan_range, val_loss_scan_mean, val_loss_scan_std, self.s_ratio, val_events_num, self.output()["fine_scan_plot"].path, logbased=False)
 
         # scan result
         scan_result = {
