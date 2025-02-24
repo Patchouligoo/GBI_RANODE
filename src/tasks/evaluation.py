@@ -5,6 +5,8 @@ import law
 import numpy as np
 import pandas as pd
 import json
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, SigTemplateUncertaintyMixin, ProcessMixin
 from src.tasks.preprocessing import Preprocessing
@@ -14,10 +16,7 @@ from src.tasks.rnodetemplate import FineScanRANOD, FineScanRANODEoverW
 
 
 class PerformanceEvaluation(
-    SigTemplateUncertaintyMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
+    FineScanRANODEoverW,
 ):
     
     num_fine_scan = luigi.IntParameter(default=10)
@@ -39,6 +38,7 @@ class PerformanceEvaluation(
     def output(self):
         return {
             "performance_plot": self.local_target("performance_plot.pdf"),
+            "sic_values": self.local_target("sic_values.json"),
         }
     
     @law.decorator.safe_output
@@ -96,9 +96,9 @@ class PerformanceEvaluation(
         fpr, tpr, _ = roc_curve(truth_label, prob_anomaly)
         sic = tpr / np.sqrt(fpr)
 
-        # plot
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_pdf import PdfPages
+        # fine sic curve at fpr = 0.001
+        arg_fpr = np.argmin(np.abs(fpr - 0.001))
+        sic_value = sic[arg_fpr]
 
         self.output()["performance_plot"].parent.touch()
 
@@ -123,3 +123,74 @@ class PerformanceEvaluation(
             plt.legend()
             pdf.savefig(f)
             plt.close(f)
+
+        with open(self.output()["sic_values"].path, 'w') as f:
+            json.dump({"sic_value_fpr001": sic_value}, f, cls=NumpyEncoder)
+
+
+class ScanOverTruthMu(
+    FineScanRANODEoverW,
+):
+    
+    def requires(self):
+        truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
+    
+        return {
+            "fine_scan_result": [FineScanRANODEoverW.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
+            "sic_result": [PerformanceEvaluation.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
+        }
+    
+    def output(self):
+        return self.local_target("scan_plot.pdf")
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
+
+        mu_pred_list = []
+        mu_lowerbound_list = []
+        mu_upperbound_list = []
+        sic_values = []
+
+        for index, truth_mu in enumerate(truth_mu_scan_list):
+
+            fine_scan_result = json.load(open(self.input()["fine_scan_result"][index]["scan_result"].path, 'r'))
+            sic_value = json.load(open(self.input()["sic_result"][index]["sic_values"].path, 'r'))["sic_value_fpr001"]
+
+            mu_pred_i = fine_scan_result["mu_pred"]
+            mu_lowerbound_i = fine_scan_result["mu_lowerbound"]
+            mu_upperbound_i = fine_scan_result["mu_upperbound"]
+
+            mu_pred_list.append(mu_pred_i)
+            mu_lowerbound_list.append(mu_lowerbound_i)
+            mu_upperbound_list.append(mu_upperbound_i)
+            sic_values.append(sic_value)
+
+        # plot
+        with PdfPages(self.output().path) as pdf:
+            f = plt.figure()
+            plt.plot(truth_mu_scan_list, mu_pred_list, label='pred $\mu$', color='red')
+            plt.fill_between(truth_mu_scan_list, mu_lowerbound_list, mu_upperbound_list, alpha=0.2, color='red')
+            plt.plot(truth_mu_scan_list, truth_mu_scan_list, label='true $\mu$', color='black')
+            plt.xlabel('true $\mu$')
+            plt.ylabel('pred $\mu$')
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.title('Scan over truth $\mu$')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+            f = plt.figure()
+            plt.plot(truth_mu_scan_list, sic_values, label='SIC', color='red')
+            plt.xlabel('true $\mu$')
+            plt.ylabel('SIC')
+            plt.xscale('log')
+            plt.title('SIC vs true $\mu$')
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
+
+        
+
