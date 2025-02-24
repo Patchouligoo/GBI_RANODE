@@ -197,7 +197,7 @@ class ScanRANODEoverW(
 
             for index_seed in range(self.num_sig_templates):
                 metadata_w_i = self.input()[f"model_{index_w}"][index_seed]["metadata"].load()
-                min_val_loss_list = metadata_w_i["min_val_loss_list"][:5]
+                min_val_loss_list = metadata_w_i["min_val_loss_list"]
                 val_events_num = metadata_w_i["num_val_events"]
                 val_loss_list.extend(min_val_loss_list)
 
@@ -205,7 +205,7 @@ class ScanRANODEoverW(
 
         # pick the top 20% models with smallest loss
         val_loss_scan = np.array(val_loss_scan)
-        val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :10]
+        val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
 
         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
