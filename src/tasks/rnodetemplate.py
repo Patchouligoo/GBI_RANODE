@@ -190,7 +190,7 @@ class FineScanRANODEoverW(
 
         model_list = {}
         for fine_scan_index in range(self.num_fine_scan):
-            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+42)) for i in range(self.num_sig_templates)]
+            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
 
         return {
             "fine_scan_models": model_list,
