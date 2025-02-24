@@ -1,6 +1,7 @@
 import os, sys
 import importlib
 import luigi
+import copy
 import law
 import numpy as np
 import pandas as pd
@@ -65,18 +66,10 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
     model_S = flows_model_RQS(device=device, num_features=5, context_features=None)
     optimizer = torch.optim.AdamW(model_S.parameters(),lr=3e-4)
 
-    # model scratch
     trainloss_list=[]
     valloss_list=[]
-    scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/random_seed_{str(train_random_seed)}/w_{str_encode_value(w_value)}/"
-    if not os.path.exists(scrath_path):
-        os.makedirs(scrath_path)
-    else:
-        # remove old models
-        for file in os.listdir(scrath_path):
-            os.remove(scrath_path + file)
-
-
+    model_list = []
+    
     # define training
     for epoch in range(epoches):
 
@@ -85,7 +78,10 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
         val_loss = r_anode_mass_joint_untransformed(model_S=model_S,w=w_value,optimizer=optimizer,data_loader=valloader,
                                                     device=device, mode='val')
 
-        torch.save(model_S.state_dict(), scrath_path+'/model_S_epoch_'+str(epoch)+'_w_'+str_encode_value(w_value)+'seed_'+str(train_random_seed)+'.pt')
+        # torch.save(model_S.state_dict(), scrath_path+'/model_S_epoch_'+str(epoch)+'_w_'+str_encode_value(w_value)+'seed_'+str(train_random_seed)+'.pt')
+        # save model
+        state_dict = copy.deepcopy({k: v.cpu() for k, v in model_S.state_dict().items()})
+        model_list.append(state_dict)
 
         trainloss_list.append(train_loss)
         valloss_list.append(val_loss)
@@ -102,8 +98,7 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
     best_models = np.argsort(valloss_list)[:num_model_to_save]
     for i in range(num_model_to_save):
         print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
-        model_name = scrath_path+'/model_S_epoch_'+str(best_models[i])+'_w_'+str_encode_value(w_value)+'seed_'+str(train_random_seed)+'.pt'
-        os.rename(model_name, output_dir["sig_models"][i].path)
+        torch.save(model_list[best_models[i]], output_dir["sig_models"][i].path)
 
     # save metadata
     metadata = {"w_true": s_ratio, "num_train_events" : traintensor_S.shape[0], "num_val_events": valtensor_S.shape[0]}

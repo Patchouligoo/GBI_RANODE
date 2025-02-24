@@ -3,6 +3,7 @@ import importlib
 import luigi
 import law
 import json
+import copy
 import numpy as np
 import pandas as pd
 from scipy.stats import rv_histogram
@@ -62,13 +63,7 @@ class BkgTemplateTraining(
         
         trainloss_list=[]
         valloss_list=[]
-        scrath_path = os.environ.get("SCRATCH_DIR")
-        if not os.path.exists(scrath_path + "/model_B/"):
-            os.makedirs(scrath_path + "/model_B/")
-        else:
-            # remove old models
-            for file in os.listdir(scrath_path + "/model_B/"):
-                os.remove(scrath_path + "/model_B/" + file)
+        model_list = []
 
         # no early stopping, just run 200 epochs and take num_model_to_save lowest valloss models
         for epoch in range(self.epochs):
@@ -76,7 +71,9 @@ class BkgTemplateTraining(
             trainloss=anode(model_B.model,trainloader,model_B.optimizer,params=None ,device=self.device, mode='train')
             valloss=anode(model_B.model,valloader,model_B.optimizer,params=None, device=self.device, mode='val')
 
-            torch.save(model_B.model.state_dict(), scrath_path+'/model_B/model_CR_'+str(epoch)+'.pt')
+            # torch.save(model_B.model.state_dict(), scrath_path+'/model_B/model_CR_'+str(epoch)+'.pt')
+            state_dict = copy.deepcopy({k: v.cpu() for k, v in model_B.model.state_dict().items()})
+            model_list.append(state_dict)
 
             valloss_list.append(valloss)
             trainloss_list.append(trainloss)
@@ -95,7 +92,7 @@ class BkgTemplateTraining(
         best_models = np.argsort(valloss_list)
         for i in range(self.num_model_to_save):
             print(f'best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}')
-            os.rename(scrath_path+'/model_B/model_CR_'+str(best_models[i])+'.pt', self.output()["bkg_models"][i].path)
+            torch.save(model_list[best_models[i]], self.output()["bkg_models"][i].path)
 
 
 class BkgTemplateChecking(

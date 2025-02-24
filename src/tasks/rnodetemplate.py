@@ -61,12 +61,6 @@ class CoarseScanRANODEoverW(
 
     def requires(self):
 
-        # clean the scratch directory
-        import shutil
-        scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/"
-        if os.path.exists(scrath_path):
-            shutil.rmtree(scrath_path)
-
         model_list = {}
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
@@ -193,12 +187,6 @@ class FineScanRANODEoverW(
     num_fine_scan = luigi.IntParameter(default=10)
     
     def requires(self):
-
-        # clean the scratch directory
-        import shutil
-        scrath_path = os.environ.get("SCRATCH_DIR") + f"/model_S/"
-        if os.path.exists(scrath_path):
-            shutil.rmtree(scrath_path)
 
         model_list = {}
         for fine_scan_index in range(self.num_fine_scan):
