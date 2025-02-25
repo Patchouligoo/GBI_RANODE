@@ -245,7 +245,7 @@ class FineScanRANODEoverW(
         output_metadata = fit_likelihood(mu_scan_range, val_loss_scan_mean, val_loss_scan_std, self.s_ratio, val_events_num, self.output()["fine_scan_plot"].path, logbased=False)
 
         mu_pred = output_metadata["mu_pred"]
-        best_model_index = output_metadata["best_model_index"]
+        best_model_index_fine_scan = np.argmin(np.abs(mu_fine_scan_range - mu_pred))
         mu_lowerbound = output_metadata["mu_lowerbound"]
         mu_upperbound = output_metadata["mu_upperbound"]
 
@@ -253,7 +253,7 @@ class FineScanRANODEoverW(
         scan_result = {
             "mu_true": self.s_ratio,
             "mu_pred": mu_pred,
-            "best_model_index": best_model_index,
+            "best_model_index_fine_scan": best_model_index_fine_scan,
             "mu_lowerbound": mu_lowerbound,
             "mu_upperbound": mu_upperbound,
         }

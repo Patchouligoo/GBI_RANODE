@@ -26,7 +26,7 @@ class PerformanceEvaluation(
 
         model_list = {}
         for fine_scan_index in range(self.num_fine_scan):
-            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+42)) for i in range(self.num_sig_templates)]
+            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
 
         return {
             "fine_scan_models": model_list,
@@ -48,14 +48,14 @@ class PerformanceEvaluation(
         with open(self.input()["fine_scan"]["scan_result"].path, 'r') as f:
             scan_result = json.load(f)
 
-        best_model_index = scan_result["best_model_index"]
+        best_model_index_fine_scan = scan_result["best_model_index_fine_scan"]
 
         model_best_list = []
         model_loss_list = []
 
         for rand_seed_index in range(self.num_sig_templates):
-            model_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index}"][rand_seed_index]["sig_models"]
-            metadata_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index}"][rand_seed_index]["metadata"].load()
+            model_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index_fine_scan}"][rand_seed_index]["sig_models"]
+            metadata_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index_fine_scan}"][rand_seed_index]["metadata"].load()
 
             for model in model_best_seed_i:
                 model_best_list.append(model.path)
