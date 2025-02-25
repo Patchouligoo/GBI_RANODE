@@ -124,6 +124,9 @@ class CoarseScanRANODEoverW(
             "mu_best": w_best,
             "mu_fine_scan_range_left": w_fine_scane_range_left,
             "mu_fine_scan_range_right": w_fine_scane_range_right,
+            "mu_dp_coarse_scan": w_range.tolist(),
+            "mu_dp_mean_coarse_scan": val_loss_scan_mean.tolist(),
+            "mu_dp_std_coarse_scan": val_loss_scan_std.tolist(),
         }
 
         with open(self.output()["peak_info"].path, 'w') as f:
@@ -175,6 +178,9 @@ class FineScanRANOD(
 
         curr_mu = mu_scan_range[self.fine_scan_index]
 
+        print("scan over ", mu_scan_range)
+        print("current value ", curr_mu)
+
         from src.models.train_model_S import train_model_S
         train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
 
@@ -213,7 +219,11 @@ class FineScanRANODEoverW(
 
         mu_lower = peak_info["mu_fine_scan_range_left"]
         mu_upper = peak_info["mu_fine_scan_range_right"]
-        mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
+        mu_fine_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
+
+        mu_dp_coarse_scan = peak_info["mu_dp_coarse_scan"]
+        mu_dp_mean_coarse_scan = peak_info["mu_dp_mean_coarse_scan"]
+        mu_dp_std_coarse_scan = peak_info["mu_dp_std_coarse_scan"]
 
         val_loss_scan = []
 
@@ -239,10 +249,20 @@ class FineScanRANODEoverW(
         val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
         val_loss_scan_std = np.std(val_loss_scan, axis=1)
 
+        # combine coarse scan and fine scan in order of mu
+        mu_scan_range = np.concatenate([mu_dp_coarse_scan, mu_fine_scan_range])
+        val_loss_scan_mean = np.concatenate([mu_dp_mean_coarse_scan, val_loss_scan_mean])
+        val_loss_scan_std = np.concatenate([mu_dp_std_coarse_scan, val_loss_scan_std])
+
+        # sort the mu values
+        sort_index = np.argsort(mu_scan_range)
+        mu_scan_range = mu_scan_range[sort_index]
+        val_loss_scan_mean = val_loss_scan_mean[sort_index]
+        val_loss_scan_std = val_loss_scan_std[sort_index]
 
         from src.fitting.fitting import fit_likelihood
         self.output()["fine_scan_plot"].parent.touch()
-        output_metadata = fit_likelihood(mu_scan_range, val_loss_scan_mean, val_loss_scan_std, self.s_ratio, val_events_num, self.output()["fine_scan_plot"].path, logbased=False)
+        output_metadata = fit_likelihood(np.log10(mu_scan_range), val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
 
         mu_pred = output_metadata["mu_pred"]
         best_model_index_fine_scan = np.argmin(np.abs(mu_fine_scan_range - mu_pred))
