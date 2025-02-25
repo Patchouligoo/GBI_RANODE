@@ -97,7 +97,7 @@ class CoarseScanRANODEoverW(
 
         # pick the top 20 models with smallest loss
         val_loss_scan = np.array(val_loss_scan)
-        val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
+        # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
 
         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
@@ -241,7 +241,7 @@ class FineScanRANODEoverW(
 
         # pick the top 20 models with smallest loss
         val_loss_scan = np.array(val_loss_scan)
-        val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
+        # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
 
         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
