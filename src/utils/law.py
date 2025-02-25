@@ -79,7 +79,7 @@ class BkgTemplateUncertaintyMixin:
     
 class SigTemplateUncertaintyMixin:
 
-    num_sig_templates = luigi.IntParameter(default=5)
+    num_sig_templates = luigi.IntParameter(default=10)
 
     def store_parts(self):
         return super().store_parts() + (f"num_templates_{self.num_sig_templates}",)

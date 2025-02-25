@@ -21,6 +21,10 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
     # bkg prob predicted by model_B
     data_train_SR_B_prob = np.load(input_dir['bkgprob']['log_B_train'].path)
     data_val_SR_B_prob = np.load(input_dir['bkgprob']['log_B_val'].path)
+
+    print("num sig in train: ", (data_train_SR_B[:,-1]==1).sum())
+    print("num sig in val: ", (data_val_SR_B[:,-1]==1).sum())
+
     # p(m) for bkg model p(x|m)
     with open(input_dir['preprocessing']['SR_mass_hist'].path, 'r') as f:
         mass_hist = json.load(f)

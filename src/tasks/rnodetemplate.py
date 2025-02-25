@@ -11,6 +11,42 @@ from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
 
+
+class PrepareTrainData(
+    TemplateRandomMixin,
+    ProcessMixin,
+    SignalStrengthMixin,
+    BaseTask,
+):
+    
+    def requires(self):
+        return {
+            'preprocessing': Preprocessing.req(self),
+            'bkgprob': PredictBkgProb.req(self),
+        }
+    
+    def output(self):
+        return {
+            "preprocessing": {
+                "data_train_SR_model_S": self.local_target("data_train_SR_model_S.npy"),
+                "data_val_SR_model_S": self.local_target("data_val_SR_model_S.npy"),
+                "data_train_SR_model_B": self.local_target("data_train_SR_model_B.npy"),
+                "data_val_SR_model_B": self.local_target("data_val_SR_model_B.npy"),
+                "SR_mass_hist": self.local_target("SR_mass_hist.json"),
+            },
+            "bkgprob": {
+                "log_B_train": self.local_target("log_B_train.npy"),
+                "log_B_val": self.local_target("log_B_val.npy"),
+            },
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+        from src.data_prep.data_prep import shuffle_trainval
+        self.output()["preprocessing"]["data_train_SR_model_S"].parent.touch()
+        shuffle_trainval(self.input(), self.output(), resample_seed=self.train_random_seed)
+
+
 class RNodeTemplate(
     TemplateRandomMixin,
     SignalStrengthMixin,
@@ -29,10 +65,7 @@ class RNodeTemplate(
         return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
-        return {
-            'preprocessing': Preprocessing.req(self),
-            'bkgprob': PredictBkgProb.req(self),
-        }
+        return PrepareTrainData.req(self)
 
     def output(self):
         return {

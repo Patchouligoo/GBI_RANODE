@@ -10,7 +10,7 @@ from sklearn.utils import shuffle
 import json
 from src.utils.utils import NumpyEncoder
 
-from src.utils.law import BaseTask, SignalStrengthMixin, ProcessMixin #, BkginSRDataMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, ProcessMixin, TemplateRandomMixin#, BkginSRDataMixin
 
 
 class ProcessSignal(
@@ -87,12 +87,10 @@ class Preprocessing(
 
     def output(self):
         return {
-            "data_train_SR_model_S": self.local_target("data_train_sr_s.npy"),
-            "data_val_SR_model_S": self.local_target("data_val_sr_s.npy"),
+            "SR_data_trainval_model_S": self.local_target("data_SR_data_trainval_model_S.npy"),
             "data_test_SR_model_S": self.local_target("data_test_sr_s.npy"),
 
-            "data_train_SR_model_B": self.local_target("data_train_sr_b.npy"),
-            "data_val_SR_model_B": self.local_target("data_val_sr_b.npy"),
+            "SR_data_trainval_model_B": self.local_target("data_SR_data_trainval_model_B.npy"),
             "data_test_SR_model_B": self.local_target("data_test_sr_b.npy"),
 
             "data_train_CR": self.local_target("data_train_cr.npy"),
@@ -106,14 +104,14 @@ class Preprocessing(
     def run(self):
         
         import json
-        from src.data_prep.data_prep import resample_split_trainval, resample_split_test
+        from src.data_prep.data_prep import SRCR_split, resample_split_test
         from src.data_prep.utils import logit_transform, preprocess_params_transform, preprocess_params_fit
 
         signal_path = self.input()["signal"].path
         bkg_path_trainval = self.input()["bkg_qcd"].path
         bkg_path_test = self.input()["bkg_extra_qcd"].path
 
-        SR_data_train, SR_data_val, CR_data = resample_split_trainval(signal_path, bkg_path_trainval, sig_ratio = self.s_ratio, resample_seed = 42)
+        SR_data_trainval, CR_data = SRCR_split(signal_path, bkg_path_trainval, sig_ratio = self.s_ratio, resample_seed = 42)
         SR_data_test = resample_split_test(signal_path, bkg_path_test, resample_seed = 42)
 
         # print('true_w in data: ', true_w)
@@ -136,25 +134,19 @@ class Preprocessing(
 
         # ----------------------- process data in SR -----------------------
         from config.configs import SR_MIN, SR_MAX
-        mass = SR_data_train[SR_data_train[:,-1]==0,0]
+        mass = SR_data_trainval[SR_data_trainval[:,-1]==0,0]
         bins = np.linspace(SR_MIN, SR_MAX, 50)
         hist_back = np.histogram(mass, bins=bins, density=True)
         # save mass histogram and bins
         with open(self.output()["SR_mass_hist"].path , 'w') as f:
             json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
 
-        # training data
-        _, mask = logit_transform(SR_data_train[:,1:-1], pre_parameters['min'],
+        # SR_data_trainval
+        _, mask = logit_transform(SR_data_trainval[:,1:-1], pre_parameters['min'],
                              pre_parameters['max'])
-        SR_data_train = SR_data_train[mask]
-        SR_data_train = preprocess_params_transform(SR_data_train, pre_parameters) 
+        SR_data_trainval = SR_data_trainval[mask]
+        SR_data_trainval = preprocess_params_transform(SR_data_trainval, pre_parameters) 
         # here x_train will be feed into both model_S and model_B later, to get prob of signal and background
-
-        # validation data
-        _, mask = logit_transform(SR_data_val[:,1:-1], pre_parameters['min'],
-                             pre_parameters['max'])
-        SR_data_val = SR_data_val[mask]
-        SR_data_val = preprocess_params_transform(SR_data_val, pre_parameters)
 
         # testing data
         _, mask = logit_transform(SR_data_test[:,1:-1], pre_parameters['min'],
@@ -164,23 +156,18 @@ class Preprocessing(
         
         # For signal model, we shift the mass by -3.5 following RANODE workflow
         # copy one set for signal model
-        SR_data_train_model_S = SR_data_train.copy()
-        SR_data_val_model_S = SR_data_val.copy()
+        SR_data_trainval_model_S = SR_data_trainval.copy()
         SR_data_test_model_S = SR_data_test.copy()
         # shift mass by -3.5 for signals
-        SR_data_train_model_S[:,0] -= 3.5
-        SR_data_val_model_S[:,0] -= 3.5
+        SR_data_trainval_model_S[:,0] -= 3.5
         SR_data_test_model_S[:,0] -= 3.5
 
-        np.save(self.output()["data_train_SR_model_S"].path, SR_data_train_model_S)
-        np.save(self.output()["data_val_SR_model_S"].path, SR_data_val_model_S)
+        np.save(self.output()["SR_data_trainval_model_S"].path, SR_data_trainval_model_S)
         np.save(self.output()["data_test_SR_model_S"].path, SR_data_test_model_S)
 
         # copy another set for background model
-        SR_data_train_model_B = SR_data_train.copy()
-        SR_data_val_model_B = SR_data_val.copy()
+        SR_data_trainval_model_B = SR_data_trainval.copy()
         SR_data_test_model_B = SR_data_test.copy()
 
-        np.save(self.output()["data_train_SR_model_B"].path, SR_data_train_model_B)
-        np.save(self.output()["data_val_SR_model_B"].path, SR_data_val_model_B)
+        np.save(self.output()["SR_data_trainval_model_B"].path, SR_data_trainval_model_B)
         np.save(self.output()["data_test_SR_model_B"].path, SR_data_test_model_B)
