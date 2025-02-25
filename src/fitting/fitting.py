@@ -10,7 +10,7 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
     x_values = x_values.reshape(-1, 1)
 
     # define the kernel
-    kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2)) #+ WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
+    kernel = C(1.0, (1e-3, 1e3)) * RBF(1e-3, (1e-5, 1e2)) #+ WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
     gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=100)
     gp.fit(x_values, y_values_mean)
 
