@@ -11,7 +11,7 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
 
     # define the kernel
     kernel = C(1.0, (1e-3, 1e3)) * RBF(1e-3, (1e-5, 1e2)) #+ WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
-    gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=100)
+    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=100)
     gp.fit(x_values, y_values_mean)
 
     # --- Make Predictions on a Fine Grid ---
@@ -58,7 +58,7 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
     with PdfPages(output_path) as pdf:
         f = plt.figure(figsize=(10, 8))
         plt.scatter(x_values.flatten(), y_values_mean, label='test points', color='black')
-        plt.errorbar(x_values.flatten(), y_values_mean, yerr=y_values_std, fmt='o', color='black')
+        # plt.errorbar(x_values.flatten(), y_values_mean, yerr=y_values_std, fmt='o', color='black')
         plt.plot(x_pred, y_pred, label='fit func', color='red')
         plt.fill_between(x_pred, y_pred - 1.96 * sigma, y_pred + 1.96 * sigma, alpha=0.2, color='red')
 
