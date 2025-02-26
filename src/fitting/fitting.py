@@ -49,8 +49,8 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
     mu_upperbound_index = np.argmin(np.abs(y_upper_bound[arg_max_y_upper_bound:] - CI_95_likelihood_lower)) if arg_max_y_upper_bound < len(y_upper_bound) else len(y_upper_bound) - 1
 
     if logbased:
-        mu_lowerbound = np.power(10, x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index])
-        mu_upperbound = np.power(10, x_pred[arg_max_y_upper_bound:][mu_upperbound_index])
+        mu_lowerbound = np.power(10, x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index]) if arg_max_y_upper_bound > 0 else np.power(10, x_pred[0])
+        mu_upperbound = np.power(10, x_pred[arg_max_y_upper_bound:][mu_upperbound_index]) if arg_max_y_upper_bound < len(x_pred) else np.power(10, x_pred[-1])
     else:
         mu_lowerbound = x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index] if arg_max_y_upper_bound > 0 else x_pred[0]
         mu_upperbound = x_pred[arg_max_y_upper_bound:][mu_upperbound_index] if arg_max_y_upper_bound < len(x_pred) else x_pred[-1]
