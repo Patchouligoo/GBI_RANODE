@@ -212,6 +212,7 @@ class CoarseScanRANODEoverW(
             "mu_true": self.s_ratio,
             "mu_pred": mu_pred,
             "mu_best": w_best,
+            "mu_best_index": w_best_index,
             "mu_fine_scan_range_left": w_fine_scane_range_left,
             "mu_fine_scan_range_right": w_fine_scane_range_right,
             "mu_dp_coarse_scan": w_range.tolist(),
@@ -223,153 +224,153 @@ class CoarseScanRANODEoverW(
             json.dump(peak_info, f, cls=NumpyEncoder)
 
 
-class FineScanRANOD(
-    TemplateRandomMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
-):
+# class FineScanRANOD(
+#     TemplateRandomMixin,
+#     SignalStrengthMixin,
+#     ProcessMixin,
+#     BaseTask,
+# ):
     
-    fine_scan_index = luigi.IntParameter(default=0)
-    num_fine_scan = luigi.IntParameter(default=10)
-    batchsize = luigi.IntParameter(default=2048)
-    epoches = luigi.IntParameter(default=100)
-    num_model_to_save = luigi.IntParameter(default=10)
-    device = luigi.Parameter(default="cuda")
+#     fine_scan_index = luigi.IntParameter(default=0)
+#     num_fine_scan = luigi.IntParameter(default=10)
+#     batchsize = luigi.IntParameter(default=2048)
+#     epoches = luigi.IntParameter(default=100)
+#     num_model_to_save = luigi.IntParameter(default=10)
+#     device = luigi.Parameter(default="cuda")
 
-    def store_parts(self):
-        return super().store_parts() + (f"fine_scan_{self.fine_scan_index}",)
+#     def store_parts(self):
+#         return super().store_parts() + (f"fine_scan_{self.fine_scan_index}",)
 
-    def requires(self):
-        return {
-            'coarse_scan': CoarseScanRANODEoverW.req(self),
-            'preprocessing': Preprocessing.req(self),
-            'bkgprob': PredictBkgProb.req(self),
-        }
+#     def requires(self):
+#         return {
+#             'coarse_scan': CoarseScanRANODEoverW.req(self),
+#             'preprocessing': Preprocessing.req(self),
+#             'bkgprob': PredictBkgProb.req(self),
+#         }
     
-    def output(self):
-        return {
-            "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
-            "trainloss_list": self.local_target("trainloss_list.npy"),
-            "valloss_list": self.local_target("valloss_list.npy"),
-            "metadata": self.local_target("metadata.json"),
-        } 
+#     def output(self):
+#         return {
+#             "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
+#             "trainloss_list": self.local_target("trainloss_list.npy"),
+#             "valloss_list": self.local_target("valloss_list.npy"),
+#             "metadata": self.local_target("metadata.json"),
+#         } 
     
-    @law.decorator.safe_output
-    def run(self):
+#     @law.decorator.safe_output
+#     def run(self):
 
-        with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
-            peak_info = json.load(f)
+#         with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
+#             peak_info = json.load(f)
 
-        mu_lower = peak_info["mu_fine_scan_range_left"]
-        mu_upper = peak_info["mu_fine_scan_range_right"]
+#         mu_lower = peak_info["mu_fine_scan_range_left"]
+#         mu_upper = peak_info["mu_fine_scan_range_right"]
 
-        mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
+#         mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
 
-        curr_mu = mu_scan_range[self.fine_scan_index]
+#         curr_mu = mu_scan_range[self.fine_scan_index]
 
-        print("scan over ", mu_scan_range)
-        print("current value ", curr_mu)
+#         print("scan over ", mu_scan_range)
+#         print("current value ", curr_mu)
 
-        from src.models.train_model_S import train_model_S
-        train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
+#         from src.models.train_model_S import train_model_S
+#         train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
 
 
-class FineScanRANODEoverW(
-    SigTemplateUncertaintyMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
-):
+# class FineScanRANODEoverW(
+#     SigTemplateUncertaintyMixin,
+#     SignalStrengthMixin,
+#     ProcessMixin,
+#     BaseTask,
+# ):
     
-    num_fine_scan = luigi.IntParameter(default=10)
+#     num_fine_scan = luigi.IntParameter(default=10)
     
-    def requires(self):
+#     def requires(self):
 
-        model_list = {}
-        for fine_scan_index in range(self.num_fine_scan):
-            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
+#         model_list = {}
+#         for fine_scan_index in range(self.num_fine_scan):
+#             model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
 
-        return {
-            "fine_scan_models": model_list,
-            "coarse_scan": CoarseScanRANODEoverW.req(self),
-        }
+#         return {
+#             "fine_scan_models": model_list,
+#             "coarse_scan": CoarseScanRANODEoverW.req(self),
+#         }
     
-    def output(self):
-        return {
-            "scan_result": self.local_target("scan_result.json"),
-            "fine_scan_plot": self.local_target("fitting_result.pdf"),
-        }
+#     def output(self):
+#         return {
+#             "scan_result": self.local_target("scan_result.json"),
+#             "fine_scan_plot": self.local_target("fitting_result.pdf"),
+#         }
     
-    @law.decorator.safe_output
-    def run(self):
+#     @law.decorator.safe_output
+#     def run(self):
         
-        with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
-            peak_info = json.load(f)
+#         with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
+#             peak_info = json.load(f)
 
-        mu_lower = peak_info["mu_fine_scan_range_left"]
-        mu_upper = peak_info["mu_fine_scan_range_right"]
-        mu_fine_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
+#         mu_lower = peak_info["mu_fine_scan_range_left"]
+#         mu_upper = peak_info["mu_fine_scan_range_right"]
+#         mu_fine_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
 
-        mu_dp_coarse_scan = peak_info["mu_dp_coarse_scan"]
-        mu_dp_mean_coarse_scan = peak_info["mu_dp_mean_coarse_scan"]
-        mu_dp_std_coarse_scan = peak_info["mu_dp_std_coarse_scan"]
+#         mu_dp_coarse_scan = peak_info["mu_dp_coarse_scan"]
+#         mu_dp_mean_coarse_scan = peak_info["mu_dp_mean_coarse_scan"]
+#         mu_dp_std_coarse_scan = peak_info["mu_dp_std_coarse_scan"]
 
-        val_loss_scan = []
+#         val_loss_scan = []
 
-        for index_w in range(self.num_fine_scan):
+#         for index_w in range(self.num_fine_scan):
 
-            val_loss_list = []
+#             val_loss_list = []
 
-            for index_seed in range(self.num_sig_templates):
-                metadata_w_i = self.input()["fine_scan_models"][f"fine_scan_{index_w}"][index_seed]["metadata"].load()
-                min_val_loss_list = metadata_w_i["min_val_loss_list"]
-                val_events_num = metadata_w_i["num_val_events"]
-                val_loss_list.extend(min_val_loss_list)
+#             for index_seed in range(self.num_sig_templates):
+#                 metadata_w_i = self.input()["fine_scan_models"][f"fine_scan_{index_w}"][index_seed]["metadata"].load()
+#                 min_val_loss_list = metadata_w_i["min_val_loss_list"]
+#                 val_events_num = metadata_w_i["num_val_events"]
+#                 val_loss_list.extend(min_val_loss_list)
 
-            val_loss_scan.append(val_loss_list) 
+#             val_loss_scan.append(val_loss_list) 
 
-        # pick the top 20 models with smallest loss
-        val_loss_scan = np.array(val_loss_scan)
-        # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
+#         # pick the top 20 models with smallest loss
+#         val_loss_scan = np.array(val_loss_scan)
+#         # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
 
-        # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
-        # which is log[mu*P(sig) + (1-mu)*P(bkg)]
-        val_loss_scan = -1 * val_loss_scan
-        val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
-        val_loss_scan_std = np.std(val_loss_scan, axis=1)
+#         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
+#         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
+#         val_loss_scan = -1 * val_loss_scan
+#         val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
+#         val_loss_scan_std = np.std(val_loss_scan, axis=1)
 
-        # combine coarse scan and fine scan in order of mu
-        mu_scan_range = np.concatenate([mu_dp_coarse_scan, mu_fine_scan_range])
-        val_loss_scan_mean = np.concatenate([mu_dp_mean_coarse_scan, val_loss_scan_mean])
-        val_loss_scan_std = np.concatenate([mu_dp_std_coarse_scan, val_loss_scan_std])
+#         # combine coarse scan and fine scan in order of mu
+#         mu_scan_range = np.concatenate([mu_dp_coarse_scan, mu_fine_scan_range])
+#         val_loss_scan_mean = np.concatenate([mu_dp_mean_coarse_scan, val_loss_scan_mean])
+#         val_loss_scan_std = np.concatenate([mu_dp_std_coarse_scan, val_loss_scan_std])
 
-        # sort the mu values
-        sort_index = np.argsort(mu_scan_range)
-        mu_scan_range = mu_scan_range[sort_index]
-        val_loss_scan_mean = val_loss_scan_mean[sort_index]
-        val_loss_scan_std = val_loss_scan_std[sort_index]
+#         # sort the mu values
+#         sort_index = np.argsort(mu_scan_range)
+#         mu_scan_range = mu_scan_range[sort_index]
+#         val_loss_scan_mean = val_loss_scan_mean[sort_index]
+#         val_loss_scan_std = val_loss_scan_std[sort_index]
 
-        from src.fitting.fitting import fit_likelihood
-        self.output()["fine_scan_plot"].parent.touch()
-        output_metadata = fit_likelihood(np.log10(mu_scan_range), val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
+#         from src.fitting.fitting import fit_likelihood
+#         self.output()["fine_scan_plot"].parent.touch()
+#         output_metadata = fit_likelihood(np.log10(mu_scan_range), val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
 
-        mu_pred = output_metadata["mu_pred"]
-        best_model_index_fine_scan = np.argmin(np.abs(mu_fine_scan_range - mu_pred))
-        mu_lowerbound = output_metadata["mu_lowerbound"]
-        mu_upperbound = output_metadata["mu_upperbound"]
+#         mu_pred = output_metadata["mu_pred"]
+#         best_model_index_fine_scan = np.argmin(np.abs(mu_fine_scan_range - mu_pred))
+#         mu_lowerbound = output_metadata["mu_lowerbound"]
+#         mu_upperbound = output_metadata["mu_upperbound"]
 
-        # scan result
-        scan_result = {
-            "mu_true": self.s_ratio,
-            "mu_pred": mu_pred,
-            "best_model_index_fine_scan": best_model_index_fine_scan,
-            "mu_lowerbound": mu_lowerbound,
-            "mu_upperbound": mu_upperbound,
-        }
+#         # scan result
+#         scan_result = {
+#             "mu_true": self.s_ratio,
+#             "mu_pred": mu_pred,
+#             "best_model_index_fine_scan": best_model_index_fine_scan,
+#             "mu_lowerbound": mu_lowerbound,
+#             "mu_upperbound": mu_upperbound,
+#         }
 
-        with open(self.output()["scan_result"].path, 'w') as f:
-            json.dump(scan_result, f, cls=NumpyEncoder)
+#         with open(self.output()["scan_result"].path, 'w') as f:
+#             json.dump(scan_result, f, cls=NumpyEncoder)
 
         
 # class GenerateSignals(

@@ -12,11 +12,11 @@ from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, Si
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
-from src.tasks.rnodetemplate import FineScanRANOD, FineScanRANODEoverW
+from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate #,FineScanRANOD, FineScanRANODEoverW
 
 
 class PerformanceEvaluation(
-    FineScanRANODEoverW,
+    CoarseScanRANODEoverW,
 ):
     
     num_fine_scan = luigi.IntParameter(default=10)
@@ -25,12 +25,14 @@ class PerformanceEvaluation(
     def requires(self):
 
         model_list = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+
         for fine_scan_index in range(self.num_fine_scan):
-            model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
+            model_list[f"model_{fine_scan_index}"] = [RNodeTemplate.req(self, w_value=w_range[fine_scan_index], train_random_seed=(i)) for i in range(self.num_sig_templates)]
 
         return {
-            "fine_scan_models": model_list,
-            "fine_scan": FineScanRANODEoverW.req(self),
+            "models": model_list,
+            "scan_result": CoarseScanRANODEoverW.req(self),
             "test_data": Preprocessing.req(self),
             "bkgprob": PredictBkgProb.req(self),
         }
@@ -45,17 +47,17 @@ class PerformanceEvaluation(
     def run(self):
 
         # load the best models
-        with open(self.input()["fine_scan"]["scan_result"].path, 'r') as f:
+        with open(self.input()["scan_result"]["peak_info"].path, 'r') as f:
             scan_result = json.load(f)
 
-        best_model_index_fine_scan = scan_result["best_model_index_fine_scan"]
+        best_model_index = scan_result["mu_best_index"]
 
         model_best_list = []
         model_loss_list = []
 
         for rand_seed_index in range(self.num_sig_templates):
-            model_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index_fine_scan}"][rand_seed_index]["sig_models"]
-            metadata_best_seed_i = self.input()["fine_scan_models"][f"fine_scan_{best_model_index_fine_scan}"][rand_seed_index]["metadata"].load()
+            model_best_seed_i = self.input()["models"][f"model_{best_model_index}"][rand_seed_index]["sig_models"]
+            metadata_best_seed_i = self.input()["models"][f"model_{best_model_index}"][rand_seed_index]["metadata"].load()
 
             for model in model_best_seed_i:
                 model_best_list.append(model.path)
@@ -128,69 +130,69 @@ class PerformanceEvaluation(
             json.dump({"sic_value_fpr001": sic_value}, f, cls=NumpyEncoder)
 
 
-class ScanOverTruthMu(
-    FineScanRANODEoverW,
-):
+# class ScanOverTruthMu(
+#     FineScanRANODEoverW,
+# ):
     
-    def requires(self):
-        truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
+#     def requires(self):
+#         truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
     
-        return {
-            "fine_scan_result": [FineScanRANODEoverW.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
-            "sic_result": [PerformanceEvaluation.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
-        }
+#         return {
+#             "fine_scan_result": [FineScanRANODEoverW.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
+#             "sic_result": [PerformanceEvaluation.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
+#         }
     
-    def output(self):
-        return self.local_target("scan_plot.pdf")
+#     def output(self):
+#         return self.local_target("scan_plot.pdf")
     
-    @law.decorator.safe_output
-    def run(self):
+#     @law.decorator.safe_output
+#     def run(self):
 
-        truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
+#         truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
 
-        mu_pred_list = []
-        mu_lowerbound_list = []
-        mu_upperbound_list = []
-        sic_values = []
+#         mu_pred_list = []
+#         mu_lowerbound_list = []
+#         mu_upperbound_list = []
+#         sic_values = []
 
-        for index, truth_mu in enumerate(truth_mu_scan_list):
+#         for index, truth_mu in enumerate(truth_mu_scan_list):
 
-            fine_scan_result = json.load(open(self.input()["fine_scan_result"][index]["scan_result"].path, 'r'))
-            sic_value = json.load(open(self.input()["sic_result"][index]["sic_values"].path, 'r'))["sic_value_fpr001"]
+#             fine_scan_result = json.load(open(self.input()["fine_scan_result"][index]["scan_result"].path, 'r'))
+#             sic_value = json.load(open(self.input()["sic_result"][index]["sic_values"].path, 'r'))["sic_value_fpr001"]
 
-            mu_pred_i = fine_scan_result["mu_pred"]
-            mu_lowerbound_i = fine_scan_result["mu_lowerbound"]
-            mu_upperbound_i = fine_scan_result["mu_upperbound"]
+#             mu_pred_i = fine_scan_result["mu_pred"]
+#             mu_lowerbound_i = fine_scan_result["mu_lowerbound"]
+#             mu_upperbound_i = fine_scan_result["mu_upperbound"]
 
-            mu_pred_list.append(mu_pred_i)
-            mu_lowerbound_list.append(mu_lowerbound_i)
-            mu_upperbound_list.append(mu_upperbound_i)
-            sic_values.append(sic_value)
+#             mu_pred_list.append(mu_pred_i)
+#             mu_lowerbound_list.append(mu_lowerbound_i)
+#             mu_upperbound_list.append(mu_upperbound_i)
+#             sic_values.append(sic_value)
 
-        # plot
-        with PdfPages(self.output().path) as pdf:
-            f = plt.figure()
-            plt.plot(truth_mu_scan_list, mu_pred_list, label='pred $\mu$', color='red')
-            plt.fill_between(truth_mu_scan_list, mu_lowerbound_list, mu_upperbound_list, alpha=0.2, color='red')
-            plt.plot(truth_mu_scan_list, truth_mu_scan_list, label='true $\mu$', color='black')
-            plt.xlabel('true $\mu$')
-            plt.ylabel('pred $\mu$')
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.title('Scan over truth $\mu$')
-            plt.legend()
-            pdf.savefig(f)
-            plt.close(f)
+#         # plot
+#         with PdfPages(self.output().path) as pdf:
+#             f = plt.figure()
+#             plt.plot(truth_mu_scan_list, mu_pred_list, label='pred $\mu$', color='red')
+#             plt.fill_between(truth_mu_scan_list, mu_lowerbound_list, mu_upperbound_list, alpha=0.2, color='red')
+#             plt.plot(truth_mu_scan_list, truth_mu_scan_list, label='true $\mu$', color='black')
+#             plt.xlabel('true $\mu$')
+#             plt.ylabel('pred $\mu$')
+#             plt.xscale('log')
+#             plt.yscale('log')
+#             plt.title('Scan over truth $\mu$')
+#             plt.legend()
+#             pdf.savefig(f)
+#             plt.close(f)
 
-            f = plt.figure()
-            plt.plot(truth_mu_scan_list, sic_values, label='SIC', color='red')
-            plt.xlabel('true $\mu$')
-            plt.ylabel('SIC')
-            plt.xscale('log')
-            plt.title('SIC vs true $\mu$')
-            plt.legend()
-            pdf.savefig(f)
-            plt.close(f)
+#             f = plt.figure()
+#             plt.plot(truth_mu_scan_list, sic_values, label='SIC', color='red')
+#             plt.xlabel('true $\mu$')
+#             plt.ylabel('SIC')
+#             plt.xscale('log')
+#             plt.title('SIC vs true $\mu$')
+#             plt.legend()
+#             pdf.savefig(f)
+#             plt.close(f)
 
         
 
