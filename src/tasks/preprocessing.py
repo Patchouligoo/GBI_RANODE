@@ -10,7 +10,7 @@ from sklearn.utils import shuffle
 import json
 from src.utils.utils import NumpyEncoder
 
-from src.utils.law import BaseTask, SignalStrengthMixin, ProcessMixin, TemplateRandomMixin#, BkginSRDataMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, ProcessMixin, TemplateRandomMixin, BkginSRDataMixin
 
 
 class ProcessSignal(
@@ -46,10 +46,10 @@ class ProcessBkg(
     (mjj, mj1, delta_mj=mj2-mj1, tau21j1=tau2j1/tau1j1, tau21j2=tau2j2/tau1j2, label=0)
     """
 
-    bkg_type = luigi.ChoiceParameter(choices=["qcd", "extra_qcd"], default="qcd")
+    # bkg_type = luigi.ChoiceParameter(choices=["qcd", "extra_qcd"], default="qcd")
 
-    def store_parts(self):
-        return super().store_parts() + (self.bkg_type,)
+    # def store_parts(self):
+    #     return super().store_parts() + (self.bkg_type,)
 
     def output(self):
         return self.local_target("reprocessed_bkgs.npy")
@@ -58,31 +58,31 @@ class ProcessBkg(
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
 
-        if self.bkg_type == "qcd":
-            data_path = f'{data_dir}/events_anomalydetection_v2.features.h5'
-        else:
-            data_path = f'{data_dir}/events_anomalydetection_qcd_extra_inneronly_features.h5'
+        data_path_qcd = f'{data_dir}/events_anomalydetection_v2.features.h5'
+        data_path_extra_qcd = f'{data_dir}/events_anomalydetection_qcd_extra_inneronly_features.h5'
 
         from src.data_prep.bkg_processing import process_bkgs
+        
+        output_qcd = process_bkgs(data_path_qcd)
+        output_extra_qcd = process_bkgs(data_path_extra_qcd)
+
+        output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
 
         self.output().parent.touch()
-        output = process_bkgs(data_path)
-
-        np.save(self.output().path, output)
+        np.save(self.output().path, output_combined)
 
 
 class Preprocessing(
     ProcessMixin,
     SignalStrengthMixin,
-    # BkginSRDataMixin,
+    BkginSRDataMixin,
     BaseTask
 ):
     
     def requires(self):
         return {
             "signal": ProcessSignal.req(self),
-            "bkg_qcd": ProcessBkg.req(self, bkg_type="qcd"),
-            "bkg_extra_qcd": ProcessBkg.req(self, bkg_type="extra_qcd"),
+            "bkg": ProcessBkg.req(self),
         }
 
     def output(self):
@@ -104,15 +104,14 @@ class Preprocessing(
     def run(self):
         
         import json
-        from src.data_prep.data_prep import SRCR_split, resample_split_test
+        from src.data_prep.data_prep import sample_split #, resample_split_test
         from src.data_prep.utils import logit_transform, preprocess_params_transform, preprocess_params_fit
 
         signal_path = self.input()["signal"].path
-        bkg_path_trainval = self.input()["bkg_qcd"].path
-        bkg_path_test = self.input()["bkg_extra_qcd"].path
+        bkg_path = self.input()["bkg"].path
 
-        SR_data_trainval, CR_data = SRCR_split(signal_path, bkg_path_trainval, sig_ratio = self.s_ratio, resample_seed = 42)
-        SR_data_test = resample_split_test(signal_path, bkg_path_test, resample_seed = 42)
+        SR_data_trainval, SR_data_test, CR_data = sample_split(signal_path, bkg_path, sig_ratio = self.s_ratio, bkg_num_in_sr_data=self.bkg_num_in_sr_data, resample_seed = 42)
+        # SR_data_test = resample_split_test(signal_path, bkg_path_test, resample_seed = 42)
 
         # print('true_w in data: ', true_w)
         # print('design w in data: ', self.s_ratio)

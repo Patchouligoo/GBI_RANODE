@@ -12,7 +12,7 @@ def separate_SB_SR(data):
     return data[innermask], data[outermask]
 
 
-def SRCR_split(signal_path, bkg_path, sig_ratio=0.005, resample_seed = 42):
+def sample_split(signal_path, bkg_path, sig_ratio=0.005, bkg_num_in_sr_data=-1, resample_seed = 42):
 
     background = np.load(bkg_path)
     signal = np.load(signal_path)
@@ -26,59 +26,69 @@ def SRCR_split(signal_path, bkg_path, sig_ratio=0.005, resample_seed = 42):
 
     SR_sig, CR_sig = separate_SB_SR(signal)
     # for now we ignore signal in CR
+
+    if bkg_num_in_sr_data != -1:
+        # this includes 50% for training and 25%, 25% for val and test
+        SR_bkg = SR_bkg[:bkg_num_in_sr_data]
     
-    # calculate the amount of signal we inject
-    num_sig = int(sig_ratio/(1-sig_ratio) * len(SR_bkg))
-    
-    SR_sig_injected = SR_sig[:num_sig]
+    # split into trainval and test set
+    SR_data_trainval, SR_data_test = train_test_split(SR_bkg, test_size=0.25, random_state=resample_seed)
+
+    # --------------------- trainval set ---------------------
+    # calculate the amount of signal we inject in trainval set
+    num_sig = int(sig_ratio/(1-sig_ratio) * len(SR_data_trainval))
+ 
+    SR_sig_injected_trainval = SR_sig[:num_sig]
 
     # concatenate background and signal
-    SR_data_trainval = np.concatenate((SR_bkg, SR_sig_injected),axis=0)
+    SR_data_trainval = np.concatenate((SR_data_trainval, SR_sig_injected_trainval),axis=0)
     SR_data_trainval = shuffle(SR_data_trainval, random_state=resample_seed)
-    # SR_data_train, SR_data_val = train_test_split(SR_data_trainval, test_size=0.2, random_state=resample_seed)
-
-    # true_mu_train = (SR_data_train[:, -1]==1).sum() / len(SR_data_train)
-    # true_mu_val = (SR_data_val[:, -1]==1).sum() / len(SR_data_val)
+    
     true_mu_trainval = (SR_data_trainval[:, -1]==1).sum() / len(SR_data_trainval)
+
+    # --------------------- test set ---------------------
+    # always inject 50000 signal in test set
+    SR_sig_injected_test = SR_sig[-50000:]
+
+    SR_data_test = np.concatenate((SR_data_test, SR_sig_injected_test),axis=0)
+    SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
+    
 
     print('SR trainval shape: ', SR_data_trainval.shape)
     print('SR trainval num sig: ', (SR_data_trainval[:, -1]==1).sum())
     print('SR trainval true mu: ', true_mu_trainval)
 
-    # print('SR val shape: ', SR_data_val.shape)
-    # print('SR val true mu: ', true_mu_val)
-    # print('SR val num sig: ', (SR_data_val[:, -1]==1).sum())
-
-    # print('CR shape: ', CR_bkg.shape)
-
-    return SR_data_trainval, CR_bkg
-
-
-def resample_split_test(signal_path, bkg_path, resample_seed = 42):
-
-    background = np.load(bkg_path)
-    signal = np.load(signal_path)
-
-    # shuffle data
-    background = shuffle(background, random_state=resample_seed)
-    signal = shuffle(signal, random_state=resample_seed)
-
-    # split bkg into SR and CR
-    SR_bkg, CR_bkg = separate_SB_SR(background)
-
-    SR_sig, CR_sig = separate_SB_SR(signal)
-    # for now we ignore signal in CR
-    
-    SR_sig_injected = SR_sig[:50000]
-
-    # concatenate background and signal
-    SR_data_test = np.concatenate((SR_bkg, SR_sig_injected),axis=0)
-    SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
-
     print('SR test shape: ', SR_data_test.shape)
     print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
 
-    return SR_data_test
+    return SR_data_trainval, SR_data_test, CR_bkg
+
+
+# def resample_split_test(signal_path, bkg_path, resample_seed = 42):
+
+#     background = np.load(bkg_path)
+#     signal = np.load(signal_path)
+
+#     # shuffle data
+#     background = shuffle(background, random_state=resample_seed)
+#     signal = shuffle(signal, random_state=resample_seed)
+
+#     # split bkg into SR and CR
+#     SR_bkg, CR_bkg = separate_SB_SR(background)
+
+#     SR_sig, CR_sig = separate_SB_SR(signal)
+#     # for now we ignore signal in CR
+    
+#     SR_sig_injected = SR_sig[:50000]
+
+#     # concatenate background and signal
+#     SR_data_test = np.concatenate((SR_bkg, SR_sig_injected),axis=0)
+#     SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
+
+#     print('SR test shape: ', SR_data_test.shape)
+#     print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
+
+#     return SR_data_test
 
 
 def shuffle_trainval(input, output, resample_seed=42):
@@ -92,9 +102,9 @@ def shuffle_trainval(input, output, resample_seed=42):
 
     log_B_trainval = np.load(input["bkgprob"]['log_B_trainval'].path)
 
-    # split data into train and val using the same random index
+    # split data into train and val using the same random index, train-val split is 2:1
     np.random.seed(resample_seed)
-    random_index_train = np.random.choice(SR_data_trainval_model_S.shape[0], int(SR_data_trainval_model_S.shape[0]*0.8), replace=False)
+    random_index_train = np.random.choice(SR_data_trainval_model_S.shape[0], int(SR_data_trainval_model_S.shape[0]*2/3), replace=False)
     random_index_val = np.setdiff1d(np.arange(SR_data_trainval_model_S.shape[0]), random_index_train)
 
     SR_data_train_model_S = SR_data_trainval_model_S[random_index_train]
