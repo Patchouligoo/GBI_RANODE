@@ -81,6 +81,63 @@ class RNodeTemplate(
         train_model_S(self.input(), self.output(), self.s_ratio, self.w_value, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
 
 
+class CoarseScanRANODEFixedSeed(
+    TemplateRandomMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+
+    w_min = luigi.FloatParameter(default=0.0001)
+    w_max = luigi.FloatParameter(default=0.05)
+    scan_number = luigi.IntParameter(default=10)
+
+    def requires(self):
+
+        model_list = {}
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+
+        for index in range(self.scan_number):
+            model_list[f"model_{index}"] = RNodeTemplate.req(self, w_value=w_range[index])
+
+        return model_list
+
+    def output(self):
+        return {
+            "coarse_scan_plot": self.local_target("fitting_result.pdf"),
+            "scan_result": self.local_target("scan_result.json"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range_log = np.log10(w_range)
+
+        val_loss_scan = []
+
+        for index_w in range(self.scan_number):
+
+            val_loss_list = []
+
+            metadata_w_i = self.input()[f"model_{index_w}"]["metadata"].load()
+            min_val_loss_list = metadata_w_i["min_val_loss_list"]
+            val_events_num = metadata_w_i["num_val_events"]
+            val_loss_list.extend(min_val_loss_list)
+
+            val_loss_scan.append(val_loss_list)
+
+        val_loss_scan = np.array(val_loss_scan)
+        val_loss_scan = -1 * val_loss_scan
+
+        val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
+        val_loss_scan_std = np.std(val_loss_scan, axis=1)
+
+        from src.fitting.fitting import fit_likelihood
+        self.output()["coarse_scan_plot"].parent.touch()
+        output_metadata = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
+
+
 class CoarseScanRANODEoverW(
     SigTemplateUncertaintyMixin,
     SignalStrengthMixin,
