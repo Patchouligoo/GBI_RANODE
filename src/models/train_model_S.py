@@ -69,6 +69,7 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
 
     model_S = flows_model_RQS(device=device, num_features=5, context_features=None)
     optimizer = torch.optim.AdamW(model_S.parameters(),lr=3e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2)
 
     trainloss_list=[]
     valloss_list=[]
@@ -90,6 +91,8 @@ def train_model_S(input_dir, output_dir, s_ratio, w_value, batch_size, epoches=1
         trainloss_list.append(train_loss)
         valloss_list.append(val_loss)
         print('Epoch: ', epoch, 'Train loss: ', train_loss, 'Val loss: ', val_loss)
+
+        scheduler.step()
 
     # save train and val loss
     trainloss_list=np.array(trainloss_list)
