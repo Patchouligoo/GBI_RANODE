@@ -64,9 +64,9 @@ class PerformanceEvaluation(
             model_loss_list.extend(metadata_best_seed_i["min_val_loss_list"])
 
         # select 20 best models
-        model_loss_list = np.array(model_loss_list)
-        model_loss_list = np.sort(model_loss_list)[:20]
-        model_best_list = model_best_list[:20]
+        # model_loss_list = np.array(model_loss_list)
+        # model_loss_list = np.sort(model_loss_list)[:20]
+        # model_best_list = model_best_list[:20]
 
         # load test data
         data_test_SR_model_S = np.load(self.input()['test_data']['data_test_SR_model_S'].path)
@@ -79,7 +79,8 @@ class PerformanceEvaluation(
 
         prob_S_list = []
 
-        for model_dir in model_best_list:
+        for model_index, model_dir in enumerate(model_best_list):
+            print(f"evaluating model {model_index}")
             prob_S = pred_model_S(model_dir, data_test_SR_model_S, batch_size=2048, device=self.device)
             prob_S_list.append(prob_S)
 
