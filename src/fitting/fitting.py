@@ -11,7 +11,7 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
 
     # define the kernel
     kernel = C(1.0, (1e-3, 1e3)) * RBF(1e-3, (1e-5, 1e2)) #+ WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
-    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=100)
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=100)
     gp.fit(x_values, y_values_mean)
 
     # --- Make Predictions on a Fine Grid ---
@@ -39,37 +39,43 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
     # get the cloest mu value to the pred mu in x_values
     best_model_index = np.argmin(np.abs(x_values - x_pred[arg_max_likelihood]))
 
-    # 95% CI of the peak
-    arg_max_y_lower_bound = np.argmax(y_lower_bound)
-    arg_max_y_upper_bound = np.argmax(y_upper_bound)
-    max_y_lower_bound = y_lower_bound[arg_max_y_lower_bound]
-    CI_95_likelihood_lower = max_y_lower_bound - np.log(2)/events_num
-    # find intersection of lower CI with y upper bound as range of mu values
-    mu_lowerbound_index = np.argmin(np.abs(y_upper_bound[0:arg_max_y_upper_bound] - CI_95_likelihood_lower)) if arg_max_y_upper_bound > 0 else 0
-    mu_upperbound_index = np.argmin(np.abs(y_upper_bound[arg_max_y_upper_bound:] - CI_95_likelihood_lower)) if arg_max_y_upper_bound < len(y_upper_bound) else len(y_upper_bound) - 1
+    # ------------------------------- 95% CI of max likelihood -------------------------------
+    # given x_pred, y_pred, and 95CI likelihood drop = np.log(2)/events_num, find the first left
+    # intersection of max likelihood - drop with y_pred as the lower bound of the 95% CI
+    CI_95_likelihood = max_likelihood - np.log(2)/events_num
 
-    if logbased:
-        mu_lowerbound = np.power(10, x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index]) if arg_max_y_upper_bound > 0 else np.power(10, x_pred[0])
-        mu_upperbound = np.power(10, x_pred[arg_max_y_upper_bound:][mu_upperbound_index]) if arg_max_y_upper_bound < len(x_pred) else np.power(10, x_pred[-1])
-    else:
-        mu_lowerbound = x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index] if arg_max_y_upper_bound > 0 else x_pred[0]
-        mu_upperbound = x_pred[arg_max_y_upper_bound:][mu_upperbound_index] if arg_max_y_upper_bound < len(x_pred) else x_pred[-1]
+    # arg_max_y_lower_bound = np.argmax(y_lower_bound)
+    # arg_max_y_upper_bound = np.argmax(y_upper_bound)
+    # max_y_lower_bound = y_lower_bound[arg_max_y_lower_bound]
+    # CI_95_likelihood_lower = max_y_lower_bound - np.log(2)/events_num
+    # # find intersection of lower CI with y upper bound as range of mu values
+    # mu_lowerbound_index = np.argmin(np.abs(y_upper_bound[0:arg_max_y_upper_bound] - CI_95_likelihood_lower)) if arg_max_y_upper_bound > 0 else 0
+    # mu_upperbound_index = np.argmin(np.abs(y_upper_bound[arg_max_y_upper_bound:] - CI_95_likelihood_lower)) if arg_max_y_upper_bound < len(y_upper_bound) else len(y_upper_bound) - 1
+
+    # if logbased:
+    #     mu_lowerbound = np.power(10, x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index]) if arg_max_y_upper_bound > 0 else np.power(10, x_pred[0])
+    #     mu_upperbound = np.power(10, x_pred[arg_max_y_upper_bound:][mu_upperbound_index]) if arg_max_y_upper_bound < len(x_pred) else np.power(10, x_pred[-1])
+    # else:
+    #     mu_lowerbound = x_pred[0:arg_max_y_upper_bound][mu_lowerbound_index] if arg_max_y_upper_bound > 0 else x_pred[0]
+    #     mu_upperbound = x_pred[arg_max_y_upper_bound:][mu_upperbound_index] if arg_max_y_upper_bound < len(x_pred) else x_pred[-1]
+
+    # ---------------------------------------------------------------------------------------
 
     with PdfPages(output_path) as pdf:
         f = plt.figure(figsize=(10, 8))
         plt.scatter(x_values.flatten(), y_values_mean, label='test points', color='black')
-        # plt.errorbar(x_values.flatten(), y_values_mean, yerr=y_values_std, fmt='o', color='black')
+        plt.errorbar(x_values.flatten(), y_values_mean, yerr=y_values_std, fmt='o', color='black')
         plt.plot(x_pred, y_pred, label='fit func', color='red')
         plt.fill_between(x_pred, y_pred - 1.96 * sigma, y_pred + 1.96 * sigma, alpha=0.2, color='red')
 
         # plot 95% CI and the peak
         plt.scatter([x_pred[arg_max_likelihood]], [max_likelihood], color='red', label=f'peak $\mu$ {mu_pred:.4f}')  # peak w value
-        plt.axhline(y=CI_95_likelihood_lower, color='blue', linestyle='--')
+        plt.axhline(y=CI_95_likelihood, color='blue', linestyle='--')
 
-        if logbased:
-            plt.scatter([np.log10(mu_lowerbound), np.log10(mu_upperbound)], [CI_95_likelihood_lower, CI_95_likelihood_lower], color='blue', label=f'95% CI of $\mu$ [{mu_lowerbound:.4f}, {mu_upperbound:.4f}]')
-        else:
-            plt.scatter([mu_lowerbound, mu_upperbound], [CI_95_likelihood_lower, CI_95_likelihood_lower], color='blue', label=f'95% CI of $\mu$ [{mu_lowerbound:.4f}, {mu_upperbound:.4f}]')
+        # if logbased:
+        #     plt.scatter([np.log10(mu_lowerbound), np.log10(mu_upperbound)], [CI_95_likelihood_lower, CI_95_likelihood_lower], color='blue', label=f'95% CI of $\mu$ [{mu_lowerbound:.4f}, {mu_upperbound:.4f}]')
+        # else:
+        #     plt.scatter([mu_lowerbound, mu_upperbound], [CI_95_likelihood_lower, CI_95_likelihood_lower], color='blue', label=f'95% CI of $\mu$ [{mu_lowerbound:.4f}, {mu_upperbound:.4f}]')
 
         # true w value
         plt.axvline(x=w_true, color='black', linestyle='--', label=f'true $\mu$ {mu_true:.4f}')
@@ -89,9 +95,15 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
 
     output_metadata = {
         "mu_pred": mu_pred,
+        "true_mu": mu_true,
         "best_model_index": best_model_index,
-        "mu_lowerbound": mu_lowerbound,
-        "mu_upperbound": mu_upperbound,
+        "x_pred": x_pred,
+        "y_pred": y_pred,
+        "sigma": sigma,
+        "CI_95_likelihood": CI_95_likelihood,
+        "x_raw": x_values.flatten(),
+        "y_raw": y_values_mean,
+        "y_raw_std": y_values_std,
     }
 
     return output_metadata

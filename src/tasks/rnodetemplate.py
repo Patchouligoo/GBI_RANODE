@@ -141,13 +141,10 @@ class CoarseScanRANODEFixedSplitSeed(
         self.output()["coarse_scan_plot"].parent.touch()
         output_metadata = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
 
+        with open(self.output()["scan_result"].path, 'w') as f:
+            json.dump(output_metadata, f, cls=NumpyEncoder)
 
-class CoarseScanRANODEoverW(
-    SigTemplateUncertaintyMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
-):
+
     
     w_min = luigi.FloatParameter(default=0.0001)
     w_max = luigi.FloatParameter(default=0.05)
