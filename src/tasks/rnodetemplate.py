@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 import json
 
-from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, SigTemplateUncertaintyMixin, ProcessMixin
+from src.utils.law import BaseTask, SignalStrengthMixin, TranvalSplitRandomMixin, TemplateRandomMixin, SigTemplateSplittingUncertaintyMixin, SigTemplateTrainingUncertaintyMixin, ProcessMixin
 from src.tasks.preprocessing import Preprocessing
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
 
 
 class PrepareTrainData(
-    TemplateRandomMixin,
+    TranvalSplitRandomMixin,
     ProcessMixin,
     SignalStrengthMixin,
     BaseTask,
@@ -44,10 +44,11 @@ class PrepareTrainData(
     def run(self):
         from src.data_prep.data_prep import shuffle_trainval
         self.output()["preprocessing"]["data_train_SR_model_S"].parent.touch()
-        shuffle_trainval(self.input(), self.output(), resample_seed=self.train_random_seed)
+        shuffle_trainval(self.input(), self.output(), resample_seed=self.sample_random_seed)
 
 
 class RNodeTemplate(
+    TranvalSplitRandomMixin,
     TemplateRandomMixin,
     SignalStrengthMixin,
     ProcessMixin,
@@ -65,7 +66,7 @@ class RNodeTemplate(
         return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
-        return PrepareTrainData.req(self)
+        return PrepareTrainData.req(self, sample_random_seed=self.sample_random_seed)
 
     def output(self):
         return {
@@ -77,12 +78,14 @@ class RNodeTemplate(
     
     @law.decorator.safe_output 
     def run(self):
+        print(f"train model S with train random seed {self.train_random_seed}, sample random seed {self.sample_random_seed}")
         from src.models.train_model_S import train_model_S
         train_model_S(self.input(), self.output(), self.s_ratio, self.w_value, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
 
 
-class CoarseScanRANODEFixedSeed(
-    TemplateRandomMixin,
+class CoarseScanRANODEFixedSplitSeed(
+    SigTemplateTrainingUncertaintyMixin,
+    TranvalSplitRandomMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -98,7 +101,7 @@ class CoarseScanRANODEFixedSeed(
         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
 
         for index in range(self.scan_number):
-            model_list[f"model_{index}"] = RNodeTemplate.req(self, w_value=w_range[index])
+            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], sample_random_seed=self.sample_random_seed, train_random_seed=i) for i in range(self.train_num_sig_templates)]
 
         return model_list
 
@@ -120,10 +123,11 @@ class CoarseScanRANODEFixedSeed(
 
             val_loss_list = []
 
-            metadata_w_i = self.input()[f"model_{index_w}"]["metadata"].load()
-            min_val_loss_list = metadata_w_i["min_val_loss_list"]
-            val_events_num = metadata_w_i["num_val_events"]
-            val_loss_list.extend(min_val_loss_list)
+            for i in range(self.train_num_sig_templates):
+                metadata_w_i = self.input()[f"model_{index_w}"][i]["metadata"].load()
+                min_val_loss_list = metadata_w_i["min_val_loss_list"]
+                val_events_num = metadata_w_i["num_val_events"]
+                val_loss_list.extend(min_val_loss_list)
 
             val_loss_scan.append(val_loss_list)
 

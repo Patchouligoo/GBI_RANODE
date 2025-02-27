@@ -68,7 +68,15 @@ class TemplateRandomMixin:
 
     def store_parts(self):
         return super().store_parts() + (f"train_seed_{self.train_random_seed}",)
-    
+
+
+class TranvalSplitRandomMixin:
+
+    sample_random_seed = luigi.IntParameter(default=42)
+
+    def store_parts(self):
+        return super().store_parts() + (f"trainval_split_seed_{self.sample_random_seed}",)
+
     
 class BkgTemplateUncertaintyMixin:
 
@@ -77,9 +85,18 @@ class BkgTemplateUncertaintyMixin:
     def store_parts(self):
         return super().store_parts() + (f"num_templates_{self.num_bkg_templates}",)
     
-class SigTemplateUncertaintyMixin:
+class SigTemplateTrainingUncertaintyMixin:
 
-    num_sig_templates = luigi.IntParameter(default=10)
+    # controls the random seed for the training
+    train_num_sig_templates = luigi.IntParameter(default=5)
 
     def store_parts(self):
-        return super().store_parts() + (f"num_templates_{self.num_sig_templates}",)
+        return super().store_parts() + (f"train_num_templates_{self.train_num_sig_templates}",)
+
+class SigTemplateSplittingUncertaintyMixin:
+    
+    # controls the random seed for the splitting train val set
+    split_num_sig_templates = luigi.IntParameter(default=10)
+
+    def store_parts(self):
+        return super().store_parts() + (f"split_num_templates_{self.split_num_sig_templates}",)
