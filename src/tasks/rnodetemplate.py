@@ -145,6 +145,13 @@ class CoarseScanRANODEFixedSplitSeed(
             json.dump(output_metadata, f, cls=NumpyEncoder)
 
 
+class CoarseScanRANODEoverW(
+    SigTemplateTrainingUncertaintyMixin,
+    SigTemplateSplittingUncertaintyMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
     
     w_min = luigi.FloatParameter(default=0.0001)
     w_max = luigi.FloatParameter(default=0.05)
@@ -152,13 +159,12 @@ class CoarseScanRANODEFixedSplitSeed(
 
     def requires(self):
 
-        model_list = {}
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        trainval_seed_results = {}
 
-        for index in range(self.scan_number):
-            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_sig_templates)]
+        for index in range(self.train_num_sig_templates):
+            trainval_seed_results[f"trainval_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(self, sample_random_seed=index)
 
-        return model_list
+        return trainval_seed_results
     
     def output(self):
         return {
@@ -169,60 +175,16 @@ class CoarseScanRANODEFixedSplitSeed(
     @law.decorator.safe_output
     def run(self):
 
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
-        w_range_log = np.log10(w_range)
+        fit_info = {}
 
-        val_loss_scan = []
+        for index in range(self.train_num_sig_templates):
+            with open(self.input()[f"trainval_seed_{index}"]["scan_result"].path, 'r') as f:
+                fit_info[f"trainval_seed_{index}"] = json.load(f)
 
-        for index_w in range(self.scan_number):
-
-            val_loss_list = []
-
-            for index_seed in range(self.num_sig_templates):
-                metadata_w_i = self.input()[f"model_{index_w}"][index_seed]["metadata"].load()
-                min_val_loss_list = metadata_w_i["min_val_loss_list"]
-                val_events_num = metadata_w_i["num_val_events"]
-                val_loss_list.extend(min_val_loss_list)
-
-            val_loss_scan.append(val_loss_list)
-
-        # pick the top 20 models with smallest loss
-        val_loss_scan = np.array(val_loss_scan)
-        # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
-
-        # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
-        # which is log[mu*P(sig) + (1-mu)*P(bkg)]
-        val_loss_scan = -1 * val_loss_scan
-        val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
-        val_loss_scan_std = np.std(val_loss_scan, axis=1)
-
-        from src.fitting.fitting import fit_likelihood
+        from src.fitting.fitting import combined_fitting
         self.output()["coarse_scan_plot"].parent.touch()
-        output_metadata = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
+        combined_fitting(fit_info, self.output())
 
-        mu_pred = output_metadata["mu_pred"]
-
-        # find the w test value closest to the peak likelihood
-        w_best_index = np.argmin(np.abs(w_range - mu_pred))
-        w_best = w_range[w_best_index]
-        # find the index - 1, index + 1 w values, return boundary w values if index is at the boundary
-        w_fine_scane_range_left = w_range[max(0, w_best_index-1)]
-        w_fine_scane_range_right = w_range[min(self.scan_number-1, w_best_index+1)]
-
-        peak_info = {
-            "mu_true": self.s_ratio,
-            "mu_pred": mu_pred,
-            "mu_best": w_best,
-            "mu_best_index": w_best_index,
-            "mu_fine_scan_range_left": w_fine_scane_range_left,
-            "mu_fine_scan_range_right": w_fine_scane_range_right,
-            "mu_dp_coarse_scan": w_range.tolist(),
-            "mu_dp_mean_coarse_scan": val_loss_scan_mean.tolist(),
-            "mu_dp_std_coarse_scan": val_loss_scan_std.tolist(),
-        }
-
-        with open(self.output()["peak_info"].path, 'w') as f:
-            json.dump(peak_info, f, cls=NumpyEncoder)
 
 
 # class FineScanRANOD(

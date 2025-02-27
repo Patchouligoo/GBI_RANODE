@@ -96,7 +96,7 @@ class SigTemplateTrainingUncertaintyMixin:
 class SigTemplateSplittingUncertaintyMixin:
     
     # controls the random seed for the splitting train val set
-    split_num_sig_templates = luigi.IntParameter(default=10)
+    split_num_sig_templates = luigi.IntParameter(default=5)
 
     def store_parts(self):
         return super().store_parts() + (f"split_num_templates_{self.split_num_sig_templates}",)
