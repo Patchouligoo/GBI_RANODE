@@ -142,53 +142,62 @@ def combined_fitting(input_dict, output_path):
     y_raw_list = np.array(y_raw_list)
     y_raw_std_list = np.array(y_raw_std_list)
 
-    # combined all predictions into final fitting
-    y_values_mean = np.mean(y_values_list, axis=0)
-    # y_values_std = np.std(y_values_list, axis=0)
-    arg_max_likelihood_combined = np.argmax(y_values_mean)
-    max_likelihood_combined = y_values_mean[arg_max_likelihood_combined]
+    # combine all predictions into final fitting
+
+
+    # --------------------- method 1: average the likelihood pred ---------------------
+    # weight_from_error = 1 / (sigma_values_list ** 2)
+    # y_values_mean = np.sum(y_values_list * weight_from_error, axis=0) / np.sum(weight_from_error, axis=0)
+    # y_values_std = np.sqrt(1 / np.sum(weight_from_error, axis=0))
+    # # y_values_2nd_moment = np.sum((y_values_list ** 2) * weight_from_error, axis=0) / np.sum(weight_from_error, axis=0)
+    # # y_values_std = np.sqrt(y_values_2nd_moment - y_values_mean ** 2)
+
+    # arg_max_likelihood_combined = np.argmax(y_values_mean)
+    # max_likelihood_combined = y_values_mean[arg_max_likelihood_combined]
+    # CI_95_likelihood = max_likelihood_combined - CI_95_likelihood_drop
+    # mu_pred_combined = np.power(10, x_values[arg_max_likelihood_combined])
+
+    # --------------------- method 2: average each original scan points ---------------------
+    # weight_from_error = 1 / (y_raw_std_list ** 2)
+    # y_values_mean = np.sum(y_raw_list * weight_from_error, axis=0) / np.sum(weight_from_error, axis=0)
+    # y_values_2nd_moment = np.sum((y_raw_list ** 2) * weight_from_error, axis=0) / np.sum(weight_from_error, axis=0)
+    # y_values_std = np.sqrt(y_values_2nd_moment - y_values_mean ** 2)
+    # y_values_std = np.sqrt(1 / np.sum(weight_from_error, axis=0))
+    y_values_mean = np.mean(y_raw_list, axis=0)
+    y_values_std = np.mean(y_raw_std_list, axis=0)
+
+    print(f"y_values_mean: {y_values_mean}")
+    print(f"y_values_std: {y_values_std}")
+
+    # use y_values_mean and std in the final fitting
+    kernel = C(1.0, (1e-3, 1e3)) * RBF(1e-3, (1e-5, 1e2))
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=y_values_std**2, n_restarts_optimizer=100)
+    gp.fit(x_raw.reshape(-1, 1), y_values_mean)
+
+    x_pred = np.linspace(x_raw.min(), x_raw.max(), 1001).reshape(-1, 1)
+    y_pred, sigma = gp.predict(x_pred, return_std=True)
+    x_pred = x_pred.flatten()
+    y_pred = y_pred.flatten()
+    sigma = sigma.flatten()
+
+    y_lower_bound = y_pred - 1.96 * sigma
+    y_upper_bound = y_pred + 1.96 * sigma
+
+    arg_max_likelihood_combined = np.argmax(y_pred)
+    max_likelihood_combined = y_pred[arg_max_likelihood_combined]
     CI_95_likelihood = max_likelihood_combined - CI_95_likelihood_drop
-    mu_pred_combined = np.power(10, x_values[arg_max_likelihood_combined])
+    mu_pred_combined = np.power(10, x_pred[arg_max_likelihood_combined])
 
-    # # get the left intersection of max likelihood - CI_95_likelihood_drop with y_values_mean as the lower bound of the 95% CI
-    # arg_leftbound = np.argmin(np.abs(y_values_mean - CI_95_likelihood))
-    # mu_leftbound = np.power(10, x_values[arg_leftbound])
-    # # get the right intersection of max likelihood - CI_95_likelihood_drop with y_values_mean as the upper bound of the 95% CI
-    # arg_rightbound = np.argmin(np.abs(y_values_mean - CI_95_likelihood))
-    # mu_rightbound = np.power(10, x_values[arg_rightbound])
-
-    # plot all individual fittings in one plot
     with PdfPages(output_path["coarse_scan_plot"].path) as pdf:
-        f = plt.figure(figsize=(10, 8))
-        for i in range(len(mu_pred_list)):
-            arg_max_likelihood_i = np.argmax(y_values_list[i])
-            max_likelihood_i = y_values_list[i][arg_max_likelihood_i]
-            mu_pred_i = np.power(10, x_values[arg_max_likelihood_i])
-
-            plt.plot(x_values, y_values_list[i], label=f'fit func {i}', color='red')
-            plt.fill_between(x_values, y_values_list[i] - 1.96 * sigma_values_list[i], y_values_list[i] + 1.96 * sigma_values_list[i], alpha=0.2, color='red')
-            plt.scatter([x_values[arg_max_likelihood_i]], [max_likelihood_i], color='red')  # peak w value
-
-        plt.title(f'Combined Likelihood fit at true $\mu$ {true_mu:.4f}')
-        plt.xlabel('$log_{10}(\mu)$')
-        plt.ylabel('likelihood')
-
-        for i in range(len(mu_pred_list)):
-            plt.scatter(x_raw, y_raw_list[i], color='black')
-            plt.errorbar(x_raw, y_raw_list[i], yerr=y_raw_std_list[i], fmt='o', color='black')
-
-        # true mu
-        plt.axvline(x=np.log10(true_mu), color='black', linestyle='--', label=f'true $\mu$ {true_mu:.4f}')
-
-        plt.legend()
-        pdf.savefig(f)
-        plt.close()
-
+        
         # final fitting
         f = plt.figure(figsize=(10, 8))
-        plt.plot(x_values, y_values_mean, label='fit func', color='red')
-        # plt.fill_between(x_values, y_values_mean - 1.96 * y_values_std, y_values_mean + 1.96 * y_values_std, alpha=0.2, color='red')
-        plt.scatter([x_values[arg_max_likelihood_combined]], [max_likelihood_combined], color='red', label=f'peak $\mu$ {mu_pred_combined:.4f}')
+        plt.plot(x_pred, y_pred, label='fit func', color='red')
+        plt.fill_between(x_pred, y_lower_bound, y_upper_bound, alpha=0.2, color='red')
+        plt.scatter(x_raw, y_values_mean, label='test points', color='black')
+        plt.errorbar(x_raw, y_values_mean, yerr=y_values_std, fmt='o', color='black')
+
+        plt.scatter([x_pred[arg_max_likelihood_combined]], [max_likelihood_combined], color='red', label=f'peak $\mu$ {mu_pred_combined:.4f}')
 
         plt.axvline(x=np.log10(true_mu), color='black', linestyle='--', label=f'true $\mu$ {true_mu:.4f}')
 
@@ -201,6 +210,60 @@ def combined_fitting(input_dict, output_path):
         plt.legend()
         pdf.savefig(f)
         plt.close()
+
+    # # --------------------- method 3: simply average each original scan points ---------------------
+    # # combined all predictions into final fitting
+    # y_values_mean = np.mean(y_values_list, axis=0)
+    # # y_values_std = np.std(y_values_list, axis=0)
+    # arg_max_likelihood_combined = np.argmax(y_values_mean)
+    # max_likelihood_combined = y_values_mean[arg_max_likelihood_combined]
+    # CI_95_likelihood = max_likelihood_combined - CI_95_likelihood_drop
+    # mu_pred_combined = np.power(10, x_values[arg_max_likelihood_combined])
+
+    # # plot all individual fittings in one plot
+    # with PdfPages(output_path["coarse_scan_plot"].path) as pdf:
+    #     f = plt.figure(figsize=(10, 8))
+    #     for i in range(len(mu_pred_list)):
+    #         arg_max_likelihood_i = np.argmax(y_values_list[i])
+    #         max_likelihood_i = y_values_list[i][arg_max_likelihood_i]
+    #         mu_pred_i = np.power(10, x_values[arg_max_likelihood_i])
+
+    #         plt.plot(x_values, y_values_list[i], label=f'fit func {i}', color='red')
+    #         plt.fill_between(x_values, y_values_list[i] - 1.96 * sigma_values_list[i], y_values_list[i] + 1.96 * sigma_values_list[i], alpha=0.2, color='red')
+    #         plt.scatter([x_values[arg_max_likelihood_i]], [max_likelihood_i], color='red')  # peak w value
+
+    #     plt.title(f'Combined Likelihood fit at true $\mu$ {true_mu:.4f}')
+    #     plt.xlabel('$log_{10}(\mu)$')
+    #     plt.ylabel('likelihood')
+
+    #     for i in range(len(mu_pred_list)):
+    #         plt.scatter(x_raw, y_raw_list[i], color='black')
+    #         plt.errorbar(x_raw, y_raw_list[i], yerr=y_raw_std_list[i], fmt='o', color='black')
+
+    #     # true mu
+    #     plt.axvline(x=np.log10(true_mu), color='black', linestyle='--', label=f'true $\mu$ {true_mu:.4f}')
+
+    #     plt.legend()
+    #     pdf.savefig(f)
+    #     plt.close()
+
+    #     # final fitting
+    #     f = plt.figure(figsize=(10, 8))
+    #     plt.plot(x_values, y_values_mean, label='fit func', color='red')
+    #     plt.fill_between(x_values, y_values_mean - 1.96 * y_values_std, y_values_mean + 1.96 * y_values_std, alpha=0.2, color='red')
+    #     plt.scatter([x_values[arg_max_likelihood_combined]], [max_likelihood_combined], color='red', label=f'peak $\mu$ {mu_pred_combined:.4f}')
+
+    #     plt.axvline(x=np.log10(true_mu), color='black', linestyle='--', label=f'true $\mu$ {true_mu:.4f}')
+
+    #     plt.axhline(y=CI_95_likelihood, color='blue', linestyle='--', label=f'95% CI of $\mu$')
+
+    #     plt.title(f'Combined Likelihood fit at true $\mu$ {true_mu:.4f}')
+    #     plt.xlabel('$log_{10}(\mu)$')
+    #     plt.ylabel('likelihood')
+
+    #     plt.legend()
+    #     pdf.savefig(f)
+    #     plt.close()
 
 
     peak_info = {
