@@ -1,50 +1,128 @@
 #import pandas as pd
+import json
 import numpy as np
-import os
-import argparse
-#import vector
 from sklearn.model_selection import train_test_split, ShuffleSplit
 from sklearn.utils import shuffle
+from config.configs import SR_MAX, SR_MIN
+from src.utils.utils import NumpyEncoder
 
-
-def separate_SB_SR(data, minmass, maxmass):
-    innermask = (data[:, 0] > minmass) & (data[:, 0] < maxmass)
+def separate_SB_SR(data):
+    innermask = (data[:, 0] > SR_MIN) & (data[:, 0] < SR_MAX)
     outermask = ~innermask
     return data[innermask], data[outermask]
 
 
-def resample_split(data_dir, sig_ratio=0.005 , resample_seed = 42,\
-                   minmass = 3.3, maxmass = 3.7):
-    background = np.load(f'{data_dir}/data_bg.npy')
-    signal = np.load(f'{data_dir}/data_sig.npy')
+def sample_split(signal_path, bkg_path, sig_ratio=0.005, bkg_num_in_sr_data=-1, resample_seed = 42):
+
+    background = np.load(bkg_path)
+    signal = np.load(signal_path)
+
+    # shuffle data
+    background = shuffle(background, random_state=resample_seed)
+    signal = shuffle(signal, random_state=resample_seed)
 
     # split bkg into SR and CR
-    SR_data, CR_data = separate_SB_SR(background, minmass, maxmass)
+    SR_bkg, CR_bkg = separate_SB_SR(background)
 
-    num_bkg_SR = len(SR_data)
-    num_bkg_CR = len(CR_data)
+    SR_sig, CR_sig = separate_SB_SR(signal)
+    # for now we ignore signal in CR
 
-    # compute num signal events to match signal ratio
-    num_sig = int(sig_ratio/(1-sig_ratio) * num_bkg_SR)
-    # randomly choose num_sig signal events
-    np.random.seed(resample_seed)
-    choice = np.random.choice(len(signal), num_sig, replace=False)
-    signal = signal[choice]
+    if bkg_num_in_sr_data != -1:
+        # this includes 50% for training and 25%, 25% for val and test
+        SR_bkg = SR_bkg[:bkg_num_in_sr_data]
+    
+    # split into trainval and test set
+    SR_data_trainval, SR_data_test = train_test_split(SR_bkg, test_size=0.25, random_state=resample_seed)
+
+    # --------------------- trainval set ---------------------
+    # calculate the amount of signal we inject in trainval set
+    num_sig = int(sig_ratio/(1-sig_ratio) * len(SR_data_trainval))
+ 
+    SR_sig_injected_trainval = SR_sig[:num_sig]
 
     # concatenate background and signal
-    SR_data = np.concatenate((SR_data, signal),axis=0)
-    SR_data = shuffle(SR_data, random_state=resample_seed)
-
-    CR_data = shuffle(CR_data, random_state=resample_seed)
+    SR_data_trainval = np.concatenate((SR_data_trainval, SR_sig_injected_trainval),axis=0)
+    SR_data_trainval = shuffle(SR_data_trainval, random_state=resample_seed)
     
-    S = SR_data[SR_data[:, -1]==1]
-    B = SR_data[SR_data[:, -1]==0]
+    true_mu_trainval = (SR_data_trainval[:, -1]==1).sum() / len(SR_data_trainval)
 
-    true_w = len(S)/(len(B)+len(S))
+    # --------------------- test set ---------------------
+    # always inject 50000 signal in test set
+    SR_sig_injected_test = SR_sig[-50000:]
+
+    SR_data_test = np.concatenate((SR_data_test, SR_sig_injected_test),axis=0)
+    SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
     
-    print('SR shape: ', SR_data.shape)
-    print("num sig in SR: ", len(S))
-    print("num bkg in SR: ", len(B))
-    print('CR shape: ', CR_data.shape)
 
-    return SR_data, CR_data, true_w
+    print('SR trainval shape: ', SR_data_trainval.shape)
+    print('SR trainval num sig: ', (SR_data_trainval[:, -1]==1).sum())
+    print('SR trainval true mu: ', true_mu_trainval)
+
+    print('SR test shape: ', SR_data_test.shape)
+    print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
+
+    return SR_data_trainval, SR_data_test, CR_bkg
+
+
+# def resample_split_test(signal_path, bkg_path, resample_seed = 42):
+
+#     background = np.load(bkg_path)
+#     signal = np.load(signal_path)
+
+#     # shuffle data
+#     background = shuffle(background, random_state=resample_seed)
+#     signal = shuffle(signal, random_state=resample_seed)
+
+#     # split bkg into SR and CR
+#     SR_bkg, CR_bkg = separate_SB_SR(background)
+
+#     SR_sig, CR_sig = separate_SB_SR(signal)
+#     # for now we ignore signal in CR
+    
+#     SR_sig_injected = SR_sig[:50000]
+
+#     # concatenate background and signal
+#     SR_data_test = np.concatenate((SR_bkg, SR_sig_injected),axis=0)
+#     SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
+
+#     print('SR test shape: ', SR_data_test.shape)
+#     print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
+
+#     return SR_data_test
+
+
+def shuffle_trainval(input, output, resample_seed=42):
+
+    # first load data
+
+    SR_data_trainval_model_S = np.load(input["preprocessing"]['SR_data_trainval_model_S'].path)
+    SR_data_trainval_model_B = np.load(input["preprocessing"]['SR_data_trainval_model_B'].path)
+    with open(input['preprocessing']['SR_mass_hist'].path, 'r') as f:
+        mass_hist = json.load(f)
+
+    log_B_trainval = np.load(input["bkgprob"]['log_B_trainval'].path)
+
+    # split data into train and val using the same random index, train-val split is 2:1
+    np.random.seed(resample_seed)
+    random_index_train = np.random.choice(SR_data_trainval_model_S.shape[0], int(SR_data_trainval_model_S.shape[0]*2/3), replace=False)
+    random_index_val = np.setdiff1d(np.arange(SR_data_trainval_model_S.shape[0]), random_index_train)
+
+    SR_data_train_model_S = SR_data_trainval_model_S[random_index_train]
+    SR_data_val_model_S = SR_data_trainval_model_S[random_index_val]
+
+    SR_data_train_model_B = SR_data_trainval_model_B[random_index_train]
+    SR_data_val_model_B = SR_data_trainval_model_B[random_index_val]
+
+    log_B_train = log_B_trainval[random_index_train]
+    log_B_val = log_B_trainval[random_index_val]
+
+    # save data
+    np.save(output["preprocessing"]["data_train_SR_model_S"].path, SR_data_train_model_S)
+    np.save(output["preprocessing"]["data_val_SR_model_S"].path, SR_data_val_model_S)
+    np.save(output["preprocessing"]["data_train_SR_model_B"].path, SR_data_train_model_B)
+    np.save(output["preprocessing"]["data_val_SR_model_B"].path, SR_data_val_model_B)
+    with open(output["preprocessing"]["SR_mass_hist"].path, 'w') as f:
+        json.dump(mass_hist, f, cls=NumpyEncoder)
+
+    np.save(output["bkgprob"]["log_B_train"].path, log_B_train)
+    np.save(output["bkgprob"]["log_B_val"].path, log_B_val)

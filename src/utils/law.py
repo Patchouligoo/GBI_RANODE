@@ -34,6 +34,25 @@ class BaseTask(law.Task):
         return law.LocalDirectoryTarget(self.local_path(*path), **kwargs)
 
 
+class ProcessMixin:
+
+    mx = luigi.IntParameter(default=100)
+    my = luigi.IntParameter(default=500)
+
+    def store_parts(self):
+        return super().store_parts() + (f"mx_{self.mx}", f"my_{self.my}",)
+
+
+class BkginSRDataMixin:
+    """
+    In order to compare with PAWS, we have to use the same number of bkgs
+    in SR to make our fake data. This variavle defines this number which is 
+    num of bkgs in our data. 50% will go into training, 25% into validation and
+    25% into testing
+    """
+    bkg_num_in_sr_data = luigi.IntParameter(default=366570)
+
+
 class SignalStrengthMixin:
 
     # S/(S+B) ratio
@@ -49,11 +68,35 @@ class TemplateRandomMixin:
 
     def store_parts(self):
         return super().store_parts() + (f"train_seed_{self.train_random_seed}",)
-    
-    
-class TemplateUncertaintyMixin:
 
-    num_templates = luigi.IntParameter(default=5)
+
+class TranvalSplitRandomMixin:
+
+    sample_random_seed = luigi.IntParameter(default=42)
 
     def store_parts(self):
-        return super().store_parts() + (f"num_templates_{self.num_templates}",)
+        return super().store_parts() + (f"trainval_split_seed_{self.sample_random_seed}",)
+
+    
+class BkgTemplateUncertaintyMixin:
+
+    num_bkg_templates = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (f"num_templates_{self.num_bkg_templates}",)
+    
+class SigTemplateTrainingUncertaintyMixin:
+
+    # controls the random seed for the training
+    train_num_sig_templates = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (f"train_num_templates_{self.train_num_sig_templates}",)
+
+class SigTemplateSplittingUncertaintyMixin:
+    
+    # controls the random seed for the splitting train val set
+    split_num_sig_templates = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (f"split_num_templates_{self.split_num_sig_templates}",)
