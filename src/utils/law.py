@@ -118,7 +118,7 @@ class SigTemplateTrainingUncertaintyMixin:
     def store_parts(self):
         return super().store_parts() + (f"train_num_templates_{self.train_num_sig_templates}",)
 
-class SigTemplateSplittingUncertaintyMixin:
+class TranvalSplitUncertaintyMixin:
     
     # controls the random seed for the splitting train val set
     split_num_sig_templates = luigi.IntParameter(default=5)
