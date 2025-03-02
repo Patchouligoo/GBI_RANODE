@@ -46,8 +46,8 @@ class ProcessSignalTrainVal(
         from src.data_prep.signal_processing import process_signals
 
         self.output()["train"].parent.touch()
-        process_signals(data_path, self.output()["train"].path, self.mx, self.my, self.s_ratio, self.trainval_random_seed, type="x_train")
-        process_signals(data_path, self.output()["val"].path, self.mx, self.my, self.s_ratio, self.trainval_random_seed, type="x_val")
+        process_signals(data_path, self.output()["train"].path, self.mx, self.my, self.s_ratio, self.trainval_split_seed, type="x_train")
+        process_signals(data_path, self.output()["val"].path, self.mx, self.my, self.s_ratio, self.trainval_split_seed, type="x_val")
 
 
 class ProcessBkg(
@@ -131,7 +131,7 @@ class PreprocessingTrainval(
 
     def requires(self):
         return {
-            "signal": ProcessSignalTrainVal.req(self, trainval_random_seed=self.trainval_random_seed),
+            "signal": ProcessSignalTrainVal.req(self, trainval_split_seed=self.trainval_split_seed),
             "bkg": ProcessBkg.req(self),
         }
 
@@ -172,13 +172,13 @@ class PreprocessingTrainval(
             json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
 
         # ----------------------- make SR data -----------------------
-        SR_bkg_train, SR_bkg_val = train_test_split(SR_bkg_trainval, test_size=0.25, random_state=self.trainval_random_seed)
+        SR_bkg_train, SR_bkg_val = train_test_split(SR_bkg_trainval, test_size=1/3, random_state=self.trainval_split_seed)
 
         SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
-        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_random_seed)
+        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_split_seed)
 
         SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
-        SR_data_val = shuffle(SR_data_val, random_state=self.trainval_random_seed)
+        SR_data_val = shuffle(SR_data_val, random_state=self.trainval_split_seed)
 
         # SR_data_trainval
         _, mask = logit_transform(SR_data_train[:,1:-1], pre_parameters['min'],

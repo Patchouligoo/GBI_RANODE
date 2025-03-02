@@ -192,7 +192,7 @@ class PredictBkgProbTrainVal(
     def requires(self):
         return {
             "bkg_models": [BkgTemplateTraining.req(self, train_random_seed=i) for i in range(self.num_bkg_templates)],
-            "preprocessed_data": PreprocessingTrainval.req(self),
+            "preprocessed_data": PreprocessingTrainval.req(self, trainval_split_seed=self.trainval_split_seed),
         }
     
     def output(self):
