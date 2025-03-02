@@ -10,10 +10,19 @@ from sklearn.utils import shuffle
 import json
 from src.utils.utils import NumpyEncoder
 
-from src.utils.law import BaseTask, SignalStrengthMixin, ProcessMixin, TemplateRandomMixin, BkginSRDataMixin
+from src.utils.law import (
+    BaseTask, 
+    SignalStrengthMixin, 
+    ProcessMixin, 
+    TranvalSplitRandomMixin, 
+    BkginSRDataMixin,
+    TestSetMixin,
+)
 
 
-class ProcessSignal(
+class ProcessSignalTrainVal(
+    TranvalSplitRandomMixin, 
+    SignalStrengthMixin,
     ProcessMixin,
     BaseTask
 ):
@@ -24,35 +33,45 @@ class ProcessSignal(
     """
 
     def output(self):
-        return self.local_target("reprocessed_signals.npy")
+        return {
+            "train": self.local_target("reprocessed_signals_train.npy"),
+            "val": self.local_target("reprocessed_signals_val.npy"),
+        }
 
     @law.decorator.safe_output 
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
-        data_path = f'{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5'
+        data_path = f'{data_dir}/signal_features_W_qq.h5'
 
         from src.data_prep.signal_processing import process_signals
 
-        self.output().parent.touch()
-        process_signals(data_path, self.output().path, self.mx, self.my)
+        self.output()["train"].parent.touch()
+        process_signals(data_path, self.output()["train"].path, self.mx, self.my, self.s_ratio, self.trainval_random_seed, type="x_train")
+        process_signals(data_path, self.output()["val"].path, self.mx, self.my, self.s_ratio, self.trainval_random_seed, type="x_val")
 
 
 class ProcessBkg(
+    BkginSRDataMixin,
     BaseTask
 ):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
     (mjj, mj1, delta_mj=mj2-mj1, tau21j1=tau2j1/tau1j1, tau21j2=tau2j2/tau1j2, label=0)
+
+    Bkg events will first be splitted into SR and CR, then SR will be splitted into trainval set and test set
+    The overall CR will be used to calculate the normalizing parameters, then it will be applied on CR events
+    Then CR events will be splitted into train and val set
     """
 
-    # bkg_type = luigi.ChoiceParameter(choices=["qcd", "extra_qcd"], default="qcd")
-
-    # def store_parts(self):
-    #     return super().store_parts() + (self.bkg_type,)
-
     def output(self):
-        return self.local_target("reprocessed_bkgs.npy")
+        return {
+            "SR_trainval": self.local_target("reprocessed_bkgs_trainval.npy"),
+            "SR_test": self.local_target("reprocessed_bkgs_test.npy"),
+            "CR_train": self.local_target("reprocessed_bkgs_cr_train.npy"),
+            "CR_val": self.local_target("reprocessed_bkgs_cr_val.npy"),
+            "pre_parameters": self.local_target("pre_parameters.json"),
+        }
 
     @law.decorator.safe_output 
     def run(self):
@@ -68,105 +87,129 @@ class ProcessBkg(
 
         output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
 
-        self.output().parent.touch()
-        np.save(self.output().path, output_combined)
+        # split into trainval and test set
+        from src.data_prep.data_prep import background_split
+        SR_bkg_trainval, SR_bkg_test, CR_bkg = background_split(output_combined, bkg_num_in_sr_data=self.bkg_num_in_sr_data, resample_seed = 42)
+
+        # save SR data
+        self.output()["SR_trainval"].parent.touch()
+        np.save(self.output()["SR_trainval"].path, SR_bkg_trainval)
+        np.save(self.output()["SR_test"].path, SR_bkg_test)
+
+        from src.data_prep.utils import logit_transform, preprocess_params_transform, preprocess_params_fit
+
+        # ----------------------- calculate normalizing parameters -----------------------
+        pre_parameters = preprocess_params_fit(CR_bkg)
+        # save pre_parameters
+        self.output()["pre_parameters"].parent.touch()
+        with open(self.output()["pre_parameters"].path, 'w') as f:
+            json.dump(pre_parameters, f, cls=NumpyEncoder)
+
+        # ----------------------- process data in CR -----------------------
+        CR_bkg = preprocess_params_transform(CR_bkg, pre_parameters)
+        CR_bkg_train, CR_bkg_val = train_test_split(CR_bkg, test_size=0.25, random_state=42)
+
+        # save training and validation data in CR
+        np.save(self.output()["CR_train"].path, CR_bkg_train)
+        np.save(self.output()["CR_val"].path, CR_bkg_val)
 
 
-class Preprocessing(
-    ProcessMixin,
+class PreprocessingTrainval(
+    TranvalSplitRandomMixin,
     SignalStrengthMixin,
-    BkginSRDataMixin,
+    ProcessMixin,
     BaseTask
 ):
-    
+    """
+    This task will take signal train val set with a given signal strength and train val set split index
+    It also takes SR bkg trainval set, using the same train val split index as seed to split the SR bkg
+    into train and val set
+
+    Then it will mix the signal and bkg into SR data, and normalize the data using the normalizing parameters
+    calculated from CR data
+    """
+
     def requires(self):
         return {
-            "signal": ProcessSignal.req(self),
+            "signal": ProcessSignalTrainVal.req(self, trainval_random_seed=self.trainval_random_seed),
             "bkg": ProcessBkg.req(self),
         }
 
     def output(self):
         return {
-            "SR_data_trainval_model_S": self.local_target("data_SR_data_trainval_model_S.npy"),
-            "data_test_SR_model_S": self.local_target("data_test_sr_s.npy"),
+            "SR_data_train_model_S": self.local_target("data_SR_data_train_model_S.npy"),
+            "SR_data_val_model_S": self.local_target("data_SR_data_val_model_S.npy"),
 
-            "SR_data_trainval_model_B": self.local_target("data_SR_data_trainval_model_B.npy"),
-            "data_test_SR_model_B": self.local_target("data_test_sr_b.npy"),
+            "SR_data_train_model_B": self.local_target("data_SR_data_train_model_B.npy"),
+            "SR_data_val_model_B": self.local_target("data_SR_data_val_model_B.npy"),
 
             "data_train_CR": self.local_target("data_train_cr.npy"),
             "data_val_CR": self.local_target("data_val_cr.npy"),
             
             "SR_mass_hist": self.local_target("SR_mass_hist.json"),
-            "pre_parameters": self.local_target("pre_parameters.json"),
         }
 
     @law.decorator.safe_output 
     def run(self):
         
         import json
-        from src.data_prep.data_prep import sample_split #, resample_split_test
         from src.data_prep.utils import logit_transform, preprocess_params_transform, preprocess_params_fit
 
-        signal_path = self.input()["signal"].path
-        bkg_path = self.input()["bkg"].path
+        # load data
+        SR_signal_train = np.load(self.input()["signal"]["train"].path)
+        SR_signal_val = np.load(self.input()["signal"]["val"].path)
+        SR_bkg_trainval = np.load(self.input()["bkg"]["SR_trainval"].path)
 
-        SR_data_trainval, SR_data_test, CR_data = sample_split(signal_path, bkg_path, sig_ratio = self.s_ratio, bkg_num_in_sr_data=self.bkg_num_in_sr_data, resample_seed = 42)
-        # SR_data_test = resample_split_test(signal_path, bkg_path_test, resample_seed = 42)
-
-        # print('true_w in data: ', true_w)
-        # print('design w in data: ', self.s_ratio)
+        pre_parameters = json.load(open(self.input()["bkg"]["pre_parameters"].path, 'r'))
+        for key in pre_parameters.keys():
+            pre_parameters[key] = np.array(pre_parameters[key])
         
-        # ----------------------- calculate normalizing parameters -----------------------
-        pre_parameters = preprocess_params_fit(CR_data)
-        # save pre_parameters
-        self.output()["pre_parameters"].parent.touch()
-        with open(self.output()["pre_parameters"].path, 'w') as f:
-            json.dump(pre_parameters, f, cls=NumpyEncoder)
-
-        # # ----------------------- process data in CR -----------------------
-        CR_data = preprocess_params_transform(CR_data, pre_parameters)
-        CR_data_train, CR_data_val = train_test_split(CR_data, test_size=0.25, random_state=42)
-
-        # save training and validation data in CR
-        np.save(self.output()["data_train_CR"].path, CR_data_train)
-        np.save(self.output()["data_val_CR"].path, CR_data_val)
-
-        # ----------------------- process data in SR -----------------------
+        # ----------------------- mass hist in SR -----------------------
         from config.configs import SR_MIN, SR_MAX
-        mass = SR_data_trainval[SR_data_trainval[:,-1]==0,0]
+        mass = SR_bkg_trainval[SR_bkg_trainval[:,-1]==0,0]
         bins = np.linspace(SR_MIN, SR_MAX, 50)
         hist_back = np.histogram(mass, bins=bins, density=True)
         # save mass histogram and bins
+        self.output()["SR_mass_hist"].parent.touch()
         with open(self.output()["SR_mass_hist"].path , 'w') as f:
             json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
 
+        # ----------------------- make SR data -----------------------
+        SR_bkg_train, SR_bkg_val = train_test_split(SR_bkg_trainval, test_size=0.25, random_state=self.trainval_random_seed)
+
+        SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
+        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_random_seed)
+
+        SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
+        SR_data_val = shuffle(SR_data_val, random_state=self.trainval_random_seed)
+
         # SR_data_trainval
-        _, mask = logit_transform(SR_data_trainval[:,1:-1], pre_parameters['min'],
+        _, mask = logit_transform(SR_data_train[:,1:-1], pre_parameters['min'],
                              pre_parameters['max'])
-        SR_data_trainval = SR_data_trainval[mask]
-        SR_data_trainval = preprocess_params_transform(SR_data_trainval, pre_parameters) 
+        SR_data_train = SR_data_train[mask]
+        SR_data_train = preprocess_params_transform(SR_data_train, pre_parameters) 
         # here x_train will be feed into both model_S and model_B later, to get prob of signal and background
 
         # testing data
-        _, mask = logit_transform(SR_data_test[:,1:-1], pre_parameters['min'],
+        _, mask = logit_transform(SR_data_val[:,1:-1], pre_parameters['min'],
                              pre_parameters['max'])
-        SR_data_test = SR_data_test[mask]
-        SR_data_test = preprocess_params_transform(SR_data_test, pre_parameters)
+        SR_data_val = SR_data_val[mask]
+        SR_data_val = preprocess_params_transform(SR_data_val, pre_parameters)
         
         # For signal model, we shift the mass by -3.5 following RANODE workflow
         # copy one set for signal model
-        SR_data_trainval_model_S = SR_data_trainval.copy()
-        SR_data_test_model_S = SR_data_test.copy()
+        SR_data_train_model_S = SR_data_train.copy()
+        SR_data_val_model_S = SR_data_val.copy()
         # shift mass by -3.5 for signals
-        SR_data_trainval_model_S[:,0] -= 3.5
-        SR_data_test_model_S[:,0] -= 3.5
+        SR_data_train_model_S[:,0] -= 3.5
+        SR_data_val_model_S[:,0] -= 3.5
 
-        np.save(self.output()["SR_data_trainval_model_S"].path, SR_data_trainval_model_S)
-        np.save(self.output()["data_test_SR_model_S"].path, SR_data_test_model_S)
+        np.save(self.output()["SR_data_train_model_S"].path, SR_data_train_model_S)
+        np.save(self.output()["SR_data_val_model_S"].path, SR_data_val_model_S)
 
         # copy another set for background model
-        SR_data_trainval_model_B = SR_data_trainval.copy()
-        SR_data_test_model_B = SR_data_test.copy()
+        SR_data_train_model_B = SR_data_train.copy()
+        SR_data_val_model_B = SR_data_val.copy()
 
-        np.save(self.output()["SR_data_trainval_model_B"].path, SR_data_trainval_model_B)
-        np.save(self.output()["data_test_SR_model_B"].path, SR_data_test_model_B)
+        np.save(self.output()["SR_data_train_model_B"].path, SR_data_train_model_B)
+        np.save(self.output()["SR_data_val_model_B"].path, SR_data_val_model_B)

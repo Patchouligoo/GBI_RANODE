@@ -56,11 +56,28 @@ class BkginSRDataMixin:
 class SignalStrengthMixin:
 
     # S/(S+B) ratio
-    s_ratio = luigi.FloatParameter(default=0.005)
+    s_ratio_index = luigi.IntParameter(default=5)
+
+    @property
+    def s_ratio(self):
+        conversion = {
+            0: 0.0,
+            1: 0.00031622776601683794,
+            2: 0.0005551935914386209,
+            3: 0.0009747402255566064,
+            4: 0.001711328304161781,
+            5: 0.0030045385302046933,
+            6: 0.00527499706370262,
+            7: 0.009261187281287938,
+            8: 0.01625964693881482,
+            9: 0.02854667663497933,
+            10: 0.05011872336272722,
+        }
+
+        return conversion[self.s_ratio_index]
 
     def store_parts(self):
-        return super().store_parts() + (f"s_ratio_{str_encode_value(self.s_ratio)}",)
-
+        return super().store_parts() + (f"s_index_{self.s_ratio_index}_ratio_{str_encode_value(self.s_ratio)}",)
 
 class TemplateRandomMixin:
 
@@ -72,10 +89,18 @@ class TemplateRandomMixin:
 
 class TranvalSplitRandomMixin:
 
-    sample_random_seed = luigi.IntParameter(default=42)
+    trainval_random_seed = luigi.IntParameter(default=0)
 
     def store_parts(self):
-        return super().store_parts() + (f"trainval_split_seed_{self.sample_random_seed}",)
+        return super().store_parts() + (f"trainval_split_seed_{self.trainval_random_seed}",)
+    
+
+class TestSetMixin:
+
+    use_true_mu = luigi.BoolParameter(default=True)
+
+    def store_parts(self):
+        return super().store_parts() + (f"use_true_mu_{self.use_true_mu}",)
 
     
 class BkgTemplateUncertaintyMixin:
