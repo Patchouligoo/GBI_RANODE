@@ -143,9 +143,6 @@ class PreprocessingTrainval(
             "SR_data_train_model_B": self.local_target("data_SR_data_train_model_B.npy"),
             "SR_data_val_model_B": self.local_target("data_SR_data_val_model_B.npy"),
 
-            "data_train_CR": self.local_target("data_train_cr.npy"),
-            "data_val_CR": self.local_target("data_val_cr.npy"),
-            
             "SR_mass_hist": self.local_target("SR_mass_hist.json"),
         }
 
