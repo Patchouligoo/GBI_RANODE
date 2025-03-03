@@ -1,18 +1,56 @@
-# import os, sys
-# import importlib
-# import luigi
-# import law
-# import numpy as np
-# import pandas as pd
-# import json
-# import matplotlib.pyplot as plt
-# from matplotlib.backends.backend_pdf import PdfPages
+import os, sys
+import importlib
+import luigi
+import law
+import numpy as np
+import pandas as pd
+import json
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
-# from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, SigTemplateUncertaintyMixin, ProcessMixin
-# from src.tasks.preprocessing import Preprocessing
-# from src.tasks.bkgtemplate import PredictBkgProb
-# from src.utils.utils import NumpyEncoder, str_encode_value
-# from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate #,FineScanRANOD, FineScanRANODEoverW
+from src.utils.law import (
+    BaseTask, 
+    SignalStrengthMixin, 
+    TranvalSplitRandomMixin, 
+    TemplateRandomMixin, 
+    TranvalSplitUncertaintyMixin, 
+    SigTemplateTrainingUncertaintyMixin, 
+    ProcessMixin,
+    TestSetMixin,
+)
+from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
+from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
+from src.utils.utils import NumpyEncoder, str_encode_value
+from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate
+
+
+class FittingScanResults(
+    CoarseScanRANODEoverW,
+):
+
+    def requires(self):
+        return CoarseScanRANODEoverW.req(self)
+    
+    def output(self):
+        return {
+            "scan_plot": self.local_target("scan_plot.pdf"),
+            "peak_info": self.local_target("peak_info.json"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        # load scan results
+        prob_S_scan = np.load(self.input()["prob_S_scan"].path)
+        prob_B_scan = np.load(self.input()["prob_B_scan"].path)
+        w_scan_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_true = self.s_ratio
+
+        from src.fitting.fitting import bootstrap_and_fit
+
+        self.output()["scan_plot"].parent.touch()
+        output_dir = self.output()["scan_plot"].path
+        bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
 
 
 # class PerformanceEvaluation(
