@@ -6,9 +6,18 @@ import numpy as np
 import pandas as pd
 import json
 
-from src.utils.law import BaseTask, SignalStrengthMixin, TranvalSplitRandomMixin, TemplateRandomMixin, TranvalSplitUncertaintyMixin, SigTemplateTrainingUncertaintyMixin, ProcessMixin
-from src.tasks.preprocessing import PreprocessingTrainval
-from src.tasks.bkgtemplate import PredictBkgProbTrainVal
+from src.utils.law import (
+    BaseTask, 
+    SignalStrengthMixin, 
+    TranvalSplitRandomMixin, 
+    TemplateRandomMixin, 
+    TranvalSplitUncertaintyMixin, 
+    SigTemplateTrainingUncertaintyMixin, 
+    ProcessMixin,
+    TestSetMixin,
+)
+from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
+from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
 from src.utils.utils import NumpyEncoder, str_encode_value
 
 
@@ -92,6 +101,7 @@ class CoarseScanRANODEFixedSplitSeed(
         return {
             "coarse_scan_plot": self.local_target("fitting_result.pdf"),
             "scan_result": self.local_target("scan_result.json"),
+            "model_list": self.local_target("model_list.json"),
         }
 
     @law.decorator.safe_output
@@ -101,18 +111,27 @@ class CoarseScanRANODEFixedSplitSeed(
         w_range_log = np.log10(w_range)
 
         val_loss_scan = []
+        model_path_list_scan = {}
 
         for index_w in range(self.scan_number):
 
             val_loss_list = []
+            model_path_list = []
 
             for i in range(self.train_num_sig_templates):
+
+                # save min val loss
                 metadata_w_i = self.input()[f"model_{index_w}"][i]["metadata"].load()
                 min_val_loss_list = metadata_w_i["min_val_loss_list"]
                 val_events_num = metadata_w_i["num_val_events"]
                 val_loss_list.extend(min_val_loss_list)
 
+                # save model paths
+                model_path_list_i = [model_i.path for model_i in self.input()[f"model_{index_w}"][i]["sig_models"]]
+                model_path_list.extend(model_path_list_i)
+
             val_loss_scan.append(val_loss_list)
+            model_path_list_scan[f"scan_index_{index_w}"] = model_path_list
 
         val_loss_scan = np.array(val_loss_scan)
         val_loss_scan = -1 * val_loss_scan
@@ -127,10 +146,13 @@ class CoarseScanRANODEFixedSplitSeed(
         with open(self.output()["scan_result"].path, 'w') as f:
             json.dump(output_metadata, f, cls=NumpyEncoder)
 
+        with open(self.output()["model_list"].path, 'w') as f:
+            json.dump(model_path_list_scan, f, cls=NumpyEncoder)
 
 class CoarseScanRANODEoverW(
     SigTemplateTrainingUncertaintyMixin,
-    SigTemplateSplittingUncertaintyMixin,
+    TranvalSplitUncertaintyMixin,
+    TestSetMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -145,28 +167,61 @@ class CoarseScanRANODEoverW(
         trainval_seed_results = {}
 
         for index in range(self.train_num_sig_templates):
-            trainval_seed_results[f"trainval_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(self, sample_random_seed=index)
+            trainval_seed_results[f"trainval_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
 
-        return trainval_seed_results
+        return {
+            "model_S_scan_result": trainval_seed_results,
+            "test_data": PreprocessingTest.req(self),
+            "bkgprob_test": PredictBkgProbTest.req(self),
+        }
     
     def output(self):
         return {
-            "coarse_scan_plot": self.local_target("fitting_result.pdf"),
-            "peak_info": self.local_target("peak_info.json"),
+            "prob_S_scan": self.local_target("prob_S_scan.npy"),
+            "prob_B_scan": self.local_target("prob_B_scan.npy"),
         }
     
     @law.decorator.safe_output
     def run(self):
-
-        fit_info = {}
-
+        
+        # load model list
+        model_scan_dict = {f"scan_index_{index}":[] for index in range(self.scan_number)}
         for index in range(self.train_num_sig_templates):
-            with open(self.input()[f"trainval_seed_{index}"]["scan_result"].path, 'r') as f:
-                fit_info[f"trainval_seed_{index}"] = json.load(f)
+            with open(self.input()["model_S_scan_result"][f"trainval_seed_{index}"]["model_list"].path, 'r') as f:
+                model_list = json.load(f)
+                for key, value in model_list.items():
+                    model_scan_dict[key].extend(value)
 
-        from src.fitting.fitting import combined_fitting
-        self.output()["coarse_scan_plot"].parent.touch()
-        combined_fitting(fit_info, self.output())
+        # load test data
+        test_data = self.input()["test_data"]
+
+        # load bkg prob
+        bkg_prob = self.input()["bkgprob_test"]["log_B_test"]
+        event_num = np.load(bkg_prob.path).shape[0]
+
+        from src.models.ranode_pred import ranode_pred
+
+        w_scan_list = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        prob_S_list = []
+        prob_B_list = []
+
+        for w_index in range(self.scan_number):
+            w_value = w_scan_list[w_index]
+
+            print(f"evaluating scan index {w_index}, w value {w_value}")
+            
+            model_list = model_scan_dict[f"scan_index_{w_index}"]
+            prob_S, prob_B = ranode_pred(model_list, w_value, test_data, bkg_prob)
+
+            prob_S_list.append(prob_S)
+            prob_B_list.append(prob_B)
+
+        prob_S_list = np.array(prob_S_list)
+        prob_B_list = np.array(prob_B_list)
+
+        self.output()["prob_S_scan"].parent.touch()
+        np.save(self.output()["prob_S_scan"].path, prob_S_list)
+        np.save(self.output()["prob_B_scan"].path, prob_B_list)
 
 
 
