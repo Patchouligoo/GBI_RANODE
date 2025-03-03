@@ -10,8 +10,16 @@ from scipy.stats import rv_histogram
 import pickle
 import torch
 
-from src.utils.law import BaseTask, SignalStrengthMixin, TemplateRandomMixin, BkgTemplateUncertaintyMixin, TranvalSplitRandomMixin, ProcessMixin
-from src.tasks.preprocessing import PreprocessingTrainval, ProcessBkg
+from src.utils.law import (
+    BaseTask, 
+    SignalStrengthMixin, 
+    TemplateRandomMixin, 
+    BkgTemplateUncertaintyMixin, 
+    TranvalSplitRandomMixin, 
+    ProcessMixin,
+    TestSetMixin,
+)
+from src.tasks.preprocessing import PreprocessingTrainval, ProcessBkg, PreprocessingTest
 
 class BkgTemplateTraining(
     TemplateRandomMixin,
@@ -252,3 +260,62 @@ class PredictBkgProbTrainVal(
         np.save(self.output()["log_B_train"].path, log_B_train)
         np.save(self.output()["log_B_val"].path, log_B_val)
 
+
+class PredictBkgProbTest(
+    BkgTemplateUncertaintyMixin,
+    TestSetMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask
+):
+    
+    num_model_to_save = luigi.IntParameter(default=10)
+    device = luigi.Parameter(default="cuda")
+
+    def requires(self):
+        return {
+            "bkg_models": [BkgTemplateTraining.req(self, train_random_seed=i) for i in range(self.num_bkg_templates)],
+            "preprocessed_test_data": PreprocessingTest.req(self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu),
+        }
+    
+    def output(self):
+        return {
+            "log_B_test": self.local_target("log_B_test.npy"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+        # load the models
+        from src.models.model_B import DensityEstimator, anode
+        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
+
+        model_Bs = []
+
+        for i in range(self.num_bkg_templates):
+            for j in range(self.num_model_to_save):
+                model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
+                best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
+                model_B.model.load_state_dict(torch.load(best_model_dir))
+                model_B.model.to("cuda")
+                model_B.model.eval()
+                model_Bs.append(model_B)
+
+        # load the sample to compare with
+        data_test_SR_B = np.load(self.input()["preprocessed_test_data"]["SR_data_test_model_B"].path)
+        testtensor_SR_B = torch.from_numpy(data_test_SR_B.astype('float32')).to(self.device)
+
+        # get avg probility of 10 models
+        log_B_test_list = []
+        for model_B in model_Bs:
+            with torch.no_grad():
+                log_B_test = model_B.model.log_probs(inputs=testtensor_SR_B[:,1:-1], cond_inputs=testtensor_SR_B[:,0].reshape(-1,1))
+                # set all nans to 0
+                log_B_test[torch.isnan(log_B_test)] = 0
+                log_B_test_list.append(log_B_test.cpu().numpy())
+
+        log_B_test = np.array(log_B_test_list)
+        B_test = np.exp(log_B_test).mean(axis=0)
+        log_B_test = np.log(B_test + 1e-32)
+
+        self.output()["log_B_test"].parent.touch()
+        np.save(self.output()["log_B_test"].path, log_B_test)

@@ -98,9 +98,10 @@ class TranvalSplitRandomMixin:
 class TestSetMixin:
 
     use_true_mu = luigi.BoolParameter(default=True)
+    test_set_fold = luigi.IntParameter(default=0)
 
     def store_parts(self):
-        return super().store_parts() + (f"use_true_mu_{self.use_true_mu}",)
+        return super().store_parts() + (f"use_true_mu_{self.use_true_mu}", f"test_set_fold_{self.test_set_fold}",)
 
     
 class BkgTemplateUncertaintyMixin:
