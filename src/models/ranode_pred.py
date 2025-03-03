@@ -21,8 +21,9 @@ def ranode_pred(model_S_list, w_test, test_data_dict, bkg_prob_dir):
     data_test_SR_B = np.load(test_data_dict['SR_data_test_model_B'].path)
     data_tesr_SR_B_logprob = np.load(bkg_prob_dir.path).flatten()
 
-    print("num sig in train: ", (data_test_SR_B[:,-1]==1).sum())
-    print("truth mu: ", (data_test_SR_B[:,-1]==1).sum() / len(data_test_SR_B))
+
+    print("num sig in file: ", (data_test_SR_B[:,-1]==0).sum())
+    print("truth mu: ", (data_test_SR_B[:,-1]==0).sum() / len(data_test_SR_B))
 
     # p(m) for bkg model p(x|m)
     with open(test_data_dict['SR_mass_hist'].path, 'r') as f:
