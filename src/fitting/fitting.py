@@ -189,6 +189,31 @@ def combined_fitting(input_dict, output_path):
     mu_pred_combined = np.power(10, x_pred[arg_max_likelihood_combined])
 
     with PdfPages(output_path["coarse_scan_plot"].path) as pdf:
+
+        f = plt.figure(figsize=(10, 8))
+        for i in range(len(mu_pred_list)):
+            arg_max_likelihood_i = np.argmax(y_values_list[i])
+            max_likelihood_i = y_values_list[i][arg_max_likelihood_i]
+            mu_pred_i = np.power(10, x_values[arg_max_likelihood_i])
+
+            plt.plot(x_values, y_values_list[i], label=f'fit func {i}', color='red')
+            plt.fill_between(x_values, y_values_list[i] - 1.96 * sigma_values_list[i], y_values_list[i] + 1.96 * sigma_values_list[i], alpha=0.2, color='red')
+            plt.scatter([x_values[arg_max_likelihood_i]], [max_likelihood_i], color='red')  # peak w value
+
+        plt.title(f'Combined Likelihood fit at true $\mu$ {true_mu:.4f}')
+        plt.xlabel('$log_{10}(\mu)$')
+        plt.ylabel('likelihood')
+        
+        for i in range(len(mu_pred_list)):
+            plt.scatter(x_raw, y_raw_list[i], color='black')
+            plt.errorbar(x_raw, y_raw_list[i], yerr=y_raw_std_list[i], fmt='o', color='black')
+
+        # true mu
+        plt.axvline(x=np.log10(true_mu), color='black', linestyle='--', label=f'true $\mu$ {true_mu:.4f}')
+
+        plt.legend()
+        pdf.savefig(f)
+        plt.close() 
         
         # final fitting
         f = plt.figure(figsize=(10, 8))
