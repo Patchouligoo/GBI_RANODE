@@ -22,7 +22,7 @@ from src.utils.law import (
 from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
 from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
 from src.utils.utils import NumpyEncoder, str_encode_value
-from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate
+from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate, CoarseScanRANODEFixedSplitSeed
 
 
 class FittingScanResults(
@@ -52,6 +52,98 @@ class FittingScanResults(
         self.output()["scan_plot"].parent.touch()
         output_dir = self.output()["scan_plot"].path
         bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
+
+
+class FittingValResults(
+    SigTemplateTrainingUncertaintyMixin,
+    TranvalSplitUncertaintyMixin,
+    WScanMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+    def requires(self):
+
+        trainval_seed_results = {}
+
+        for index in range(self.split_num_sig_templates):
+            trainval_seed_results[f"trainval_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
+
+        return trainval_seed_results
+    
+    def output(self):
+        return {
+            "scan_result": self.local_target("scan_result.json"),
+            "scan_plot": self.local_target("scan_plot.pdf"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range_log = np.log10(w_range)
+
+        x_pred = None
+        y_pred_list = []
+        num_events = None
+        CI95_drop = None
+
+        # load scan results
+        for trainval_split_index in range(self.split_num_sig_templates):
+            scan_result = json.load(open(self.input()[f"trainval_seed_{trainval_split_index}"]["scan_result"].path, 'r'))
+            x_pred = scan_result["x_pred"]
+            y_pred = scan_result["y_pred"]
+            num_events = np.log(2) / scan_result["CI_95_likelihood_drop"]
+            CI95_drop = scan_result["CI_95_likelihood_drop"]
+
+            y_pred_list.append(y_pred)
+
+        # shift all likelihoods y max to the same value
+        for i in range(len(y_pred_list)):
+            y_pred_list[i] = y_pred_list[i] - np.max(y_pred_list[i])
+
+        y_pred_list = np.array(y_pred_list)
+        y_mean = np.mean(y_pred_list, axis=0)
+        y_std = np.std(y_pred_list, axis=0)
+
+        max_likelihood_index = np.argmax(y_mean)
+        max_likelihood = y_mean[max_likelihood_index]
+        log_mu_pred = x_pred[max_likelihood_index]
+        mu_pred = 10**log_mu_pred
+        CI95_value = max_likelihood - CI95_drop
+
+        # find left and right CI95 crossing points
+        diff = y_mean - CI95_value
+        from src.utils.utils import find_zero_crossings
+        # Get all zero-crossing points
+        crossings = find_zero_crossings(x_pred, diff)
+        # Separate them into those on the left vs. right of the maximum
+        left_crossings  = [c for c in crossings if c < log_mu_pred]
+        right_crossings = [c for c in crossings if c > log_mu_pred]
+        # If there is more than one intersection on each side, we only want
+        # the first one to the left and the first one to the right.
+        x_left = max(left_crossings)  if left_crossings  else None
+        x_right = min(right_crossings) if right_crossings else None
+
+        mu_left = 10**x_left if x_left is not None else None
+        mu_right = 10**x_right if x_right is not None else None
+
+        self.output()["scan_result"].parent.touch()
+        f = plt.figure()
+
+        plt.plot(x_pred, y_mean, label='mean log_likelihood', color='red')
+        plt.fill_between(x_pred, y_mean - 1.96*y_std, y_mean + 1.96*y_std, alpha=0.2, color='red')
+
+        plt.scatter([log_mu_pred], [max_likelihood], color='red', label=f'pred mu = {mu_pred:.4f}')
+
+        plt.axvline(np.log10(self.s_ratio), color='black', linestyle='--', label='true w')
+        plt.axhline(CI95_value, color='blue', linestyle=':', label=f'CI95, [{mu_left:.6f}, {mu_right:.6f}]')
+        plt.xlabel('log10(w)')
+        plt.ylabel('relative likelihood')
+        plt.legend()
+        plt.savefig(self.output()["scan_plot"].path)
+        plt.tight_layout()
+        plt.close(f)
 
 
 # class PerformanceEvaluation(
