@@ -15,6 +15,7 @@ from src.utils.law import (
     SigTemplateTrainingUncertaintyMixin, 
     ProcessMixin,
     TestSetMixin,
+    WScanMixin,
 )
 from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
 from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
@@ -78,14 +79,11 @@ class RNodeTemplate(
 class CoarseScanRANODEFixedSplitSeed(
     SigTemplateTrainingUncertaintyMixin,
     TranvalSplitRandomMixin,
+    WScanMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
 ):
-
-    w_min = luigi.FloatParameter(default=0.0001)
-    w_max = luigi.FloatParameter(default=0.05)
-    scan_number = luigi.IntParameter(default=10)
 
     def requires(self):
 
@@ -153,14 +151,11 @@ class CoarseScanRANODEoverW(
     SigTemplateTrainingUncertaintyMixin,
     TranvalSplitUncertaintyMixin,
     TestSetMixin,
+    WScanMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
 ):
-    
-    w_min = luigi.FloatParameter(default=0.0001)
-    w_max = luigi.FloatParameter(default=0.05)
-    scan_number = luigi.IntParameter(default=10)
 
     def requires(self):
 

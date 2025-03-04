@@ -126,3 +126,13 @@ class TranvalSplitUncertaintyMixin:
 
     def store_parts(self):
         return super().store_parts() + (f"split_num_templates_{self.split_num_sig_templates}",)
+    
+
+class WScanMixin:
+
+    w_min = luigi.FloatParameter(default=0.0001)
+    w_max = luigi.FloatParameter(default=0.05)
+    scan_number = luigi.IntParameter(default=20)
+
+    def store_parts(self):
+        return super().store_parts() + (f"w_min_{self.w_min}_w_max_{self.w_max}_scan_{self.scan_number}",)    
