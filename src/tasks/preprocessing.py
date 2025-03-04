@@ -152,10 +152,16 @@ class PreprocessingTrainval(
     """
 
     def requires(self):
-        return {
-            "signal": ProcessSignalTrainVal.req(self, trainval_split_seed=self.trainval_split_seed),
-            "bkg": ProcessBkg.req(self),
-        }
+
+        if self.s_ratio != 0:
+            return {
+                "signal": ProcessSignalTrainVal.req(self, trainval_split_seed=self.trainval_split_seed),
+                "bkg": ProcessBkg.req(self),
+            }
+        else:
+            return {
+                "bkg": ProcessBkg.req(self),
+            }
 
     def output(self):
         return {
@@ -174,8 +180,9 @@ class PreprocessingTrainval(
         from src.data_prep.utils import logit_transform, preprocess_params_transform, preprocess_params_fit
 
         # load data
-        SR_signal_train = np.load(self.input()["signal"]["train"].path)
-        SR_signal_val = np.load(self.input()["signal"]["val"].path)
+        if self.s_ratio != 0:
+            SR_signal_train = np.load(self.input()["signal"]["train"].path)
+            SR_signal_val = np.load(self.input()["signal"]["val"].path)
         SR_bkg_trainval = np.load(self.input()["bkg"]["SR_trainval"].path)
 
         pre_parameters = json.load(open(self.input()["bkg"]["pre_parameters"].path, 'r'))
@@ -195,10 +202,14 @@ class PreprocessingTrainval(
         # ----------------------- make SR data -----------------------
         SR_bkg_train, SR_bkg_val = train_test_split(SR_bkg_trainval, test_size=1/3, random_state=self.trainval_split_seed)
 
-        SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
-        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_split_seed)
+        if self.s_ratio != 0:
+            SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
+            SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
+        else:
+            SR_data_train = SR_bkg_train
+            SR_data_val = SR_bkg_val
 
-        SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
+        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_split_seed)
         SR_data_val = shuffle(SR_data_val, random_state=self.trainval_split_seed)
 
         # SR_data_trainval
@@ -244,10 +255,15 @@ class PreprocessingTest(
     """
 
     def requires(self):
-        return {
-            "signal": ProcessSignalTest.req(self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu),
-            "bkg": ProcessBkg.req(self),
-        }
+        if self.s_ratio != 0:
+            return {
+                "signal": ProcessSignalTest.req(self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu),
+                "bkg": ProcessBkg.req(self),
+            }
+        else:
+            return {
+                "bkg": ProcessBkg.req(self),
+            }
     
     def output(self):
         return {
@@ -278,10 +294,15 @@ class PreprocessingTest(
             pre_parameters[key] = np.array(pre_parameters[key])
 
         # load data
-        SR_signal_test = np.load(self.input()["signal"]["test"].path)
+        if self.s_ratio != 0:
+            SR_signal_test = np.load(self.input()["signal"]["test"].path)
         SR_bkg_test = np.load(self.input()["bkg"]["SR_test"].path)
 
-        SR_data_test = np.concatenate([SR_signal_test, SR_bkg_test], axis=0)
+        if self.s_ratio != 0:
+            SR_data_test = np.concatenate([SR_signal_test, SR_bkg_test], axis=0)
+        else:
+            SR_data_test = SR_bkg_test
+            
         SR_data_test = shuffle(SR_data_test, random_state=42)
 
         _, mask = logit_transform(SR_data_test[:,1:-1], pre_parameters['min'],
