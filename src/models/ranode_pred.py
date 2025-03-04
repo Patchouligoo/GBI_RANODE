@@ -46,8 +46,9 @@ def ranode_pred(model_S_list, w_test, test_data_dict, bkg_prob_dir):
 
     prob_B = np.exp(data_tesr_SR_B_logprob) * test_mass_prob_B
 
-    # likelihood = w_test * prob_S + (1-w_test) * prob_B
-    # log_likelihood = np.log(likelihood + 1e-32)
+    likelihood = w_test * prob_S.mean(axis=0) + (1-w_test) * prob_B
+    log_likelihood = np.log(likelihood + 1e-32).mean()
+    print("log likelihood: ", log_likelihood)
 
     return prob_S, prob_B
 
