@@ -130,7 +130,7 @@ def pred_model_S(model_dir, data_train_SR_S, device='cuda'):
 
     model_S.eval()
 
-    model_S_log_prob = model_S.log_prob(inputs=testtensor_S[:, 1:])
+    model_S_log_prob = model_S.log_prob(inputs=testtensor_S[:, :-1])
 
     model_S_log_prob[torch.isnan(model_S_log_prob)] = 0
 
