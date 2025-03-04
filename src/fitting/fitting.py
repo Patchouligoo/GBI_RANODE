@@ -99,6 +99,10 @@ def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_
 
     event_num = prob_S_list.shape[-1]
 
+    # mu_scan_values = mu_scan_values[5:]
+    # prob_B_list = prob_B_list[5:]
+    # prob_S_list = prob_S_list[5:]
+    
     # compute the nominal likelihood
     prob_S_nominal = prob_S_list.mean(axis=1) # shape is (num_scan_points, num_events)
     prob_B_nominal = prob_B_list.mean(axis=1) # shape is (num_scan_points, num_events)
@@ -108,7 +112,7 @@ def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_
     
     # Now bootstrap classifiers in model_S to get the uncertainty in the likelihood
     np.random.seed(random_seed)
-    bootstrap_model_S_index = np.random.choice(len(prob_S_list[0]), size=(bootstrap_num, len(prob_S_list[0])), replace=True)
+    bootstrap_model_S_index = np.random.choice(len(prob_S_list[0]), size=(bootstrap_num, 1), replace=True)
     # bootstrap_model_B_index = np.random.choice(len(prob_B_list[0]), size=(bootstrap_num, len(prob_B_list[0])), replace=True)
     bootstrap_log_likelihood = []
 
