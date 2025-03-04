@@ -130,7 +130,7 @@ class TranvalSplitUncertaintyMixin:
 
 class WScanMixin:
 
-    w_min = luigi.FloatParameter(default=0.0001)
+    w_min = luigi.FloatParameter(default=0.00001)
     w_max = luigi.FloatParameter(default=0.05)
     scan_number = luigi.IntParameter(default=20)
 
