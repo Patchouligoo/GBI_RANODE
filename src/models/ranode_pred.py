@@ -19,8 +19,7 @@ def ranode_pred(model_S_list, w_test, test_data_dict, bkg_prob_dir):
     # load data
     data_test_SR_S = np.load(test_data_dict['SR_data_test_model_S'].path)
     data_test_SR_B = np.load(test_data_dict['SR_data_test_model_B'].path)
-    data_tesr_SR_B_logprob = np.load(bkg_prob_dir.path).flatten()
-
+    data_tesr_SR_B_logprob = np.load(bkg_prob_dir.path).reshape(-1, len(data_test_SR_B))
 
     print("num sig in file: ", (data_test_SR_B[:,-1]==1).sum())
     print("truth mu: ", (data_test_SR_B[:,-1]==1).sum() / len(data_test_SR_B))
@@ -46,7 +45,7 @@ def ranode_pred(model_S_list, w_test, test_data_dict, bkg_prob_dir):
 
     prob_B = np.exp(data_tesr_SR_B_logprob) * test_mass_prob_B
 
-    likelihood = w_test * prob_S.mean(axis=0) + (1-w_test) * prob_B
+    likelihood = w_test * prob_S.mean(axis=0) + (1-w_test) * prob_B.mean(axis=0)
     log_likelihood = np.log(likelihood + 1e-32).mean()
     print("log likelihood: ", log_likelihood)
 

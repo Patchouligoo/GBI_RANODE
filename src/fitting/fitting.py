@@ -95,30 +95,38 @@ def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, ou
 def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_dir, bootstrap_num=100, random_seed=42):
 
     # prob_S_list has shape (num_scan_points, num_models, num_events)
-    # prob_B_list has shape (num_scan_points, num_events)
+    # prob_B_list has shape (num_scan_points, num_models, num_events)
 
     event_num = prob_S_list.shape[-1]
 
     # compute the nominal likelihood
     prob_S_nominal = prob_S_list.mean(axis=1) # shape is (num_scan_points, num_events)
-    likelihood_nominal = mu_scan_values.reshape(-1, 1) * prob_S_nominal + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_list
-    log_likelihood_nominal = np.log(likelihood_nominal)
-    log_likelihood_nominal_mean = log_likelihood_nominal.mean(axis=1)
+    prob_B_nominal = prob_B_list.mean(axis=1) # shape is (num_scan_points, num_events)
+    # likelihood_nominal = mu_scan_values.reshape(-1, 1) * prob_S_nominal + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_nominal
+    # log_likelihood_nominal = np.log(likelihood_nominal)
+    # log_likelihood_nominal_mean = log_likelihood_nominal.mean(axis=1)
     
     # Now bootstrap classifiers in model_S to get the uncertainty in the likelihood
-    bootstrap_model_index = np.random.choice(len(prob_S_list[0]), size=(bootstrap_num, len(prob_S_list[0])), replace=True)
+    np.random.seed(random_seed)
+    bootstrap_model_S_index = np.random.choice(len(prob_S_list[0]), size=(bootstrap_num, len(prob_S_list[0])), replace=True)
+    # bootstrap_model_B_index = np.random.choice(len(prob_B_list[0]), size=(bootstrap_num, len(prob_B_list[0])), replace=True)
     bootstrap_log_likelihood = []
 
     for index in tqdm(range(bootstrap_num)):
-        bootstrap_model_index_i = bootstrap_model_index[index]
-        prob_S_bootstrap_i = prob_S_list[:, bootstrap_model_index_i].mean(axis=1)
-        likelihood_bootstrap_i = mu_scan_values.reshape(-1, 1) * prob_S_bootstrap_i + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_list
+        bootstrap_model_S_index_i = bootstrap_model_S_index[index]
+        prob_S_bootstrap_i = prob_S_list[:, bootstrap_model_S_index_i].mean(axis=1)
+
+        # bootstrap_model_B_index_i = bootstrap_model_B_index[index]
+        # prob_B_bootstrap_i = prob_B_list[:, bootstrap_model_B_index_i].mean(axis=1)
+
+        likelihood_bootstrap_i = mu_scan_values.reshape(-1, 1) * prob_S_bootstrap_i + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_nominal
         log_likelihood_bootstrap_i = np.log(likelihood_bootstrap_i)
         log_likelihood_bootstrap_i_mean = log_likelihood_bootstrap_i.mean(axis=1)
 
         bootstrap_log_likelihood.append(log_likelihood_bootstrap_i_mean)
 
     bootstrap_log_likelihood = np.array(bootstrap_log_likelihood)
+    log_likelihood_nominal_mean = bootstrap_log_likelihood.mean(axis=0)
     log_likelihood_nominal_std = np.std(bootstrap_log_likelihood, axis=0)
 
     # -------------------- make fitting and save the info --------------------

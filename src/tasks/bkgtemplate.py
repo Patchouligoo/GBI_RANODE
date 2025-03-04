@@ -314,8 +314,6 @@ class PredictBkgProbTest(
                 log_B_test_list.append(log_B_test.cpu().numpy())
 
         log_B_test = np.array(log_B_test_list)
-        B_test = np.exp(log_B_test).mean(axis=0)
-        log_B_test = np.log(B_test + 1e-32)
 
         self.output()["log_B_test"].parent.touch()
         np.save(self.output()["log_B_test"].path, log_B_test)
