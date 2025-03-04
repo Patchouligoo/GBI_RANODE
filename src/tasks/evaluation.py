@@ -125,8 +125,8 @@ class FittingValResults(
         x_left = max(left_crossings)  if left_crossings  else None
         x_right = min(right_crossings) if right_crossings else None
 
-        mu_left = 10**x_left if x_left is not None else None
-        mu_right = 10**x_right if x_right is not None else None
+        mu_left = 10**x_left if x_left is not None else 0
+        mu_right = 10**x_right if x_right is not None else 1
 
         self.output()["scan_result"].parent.touch()
         f = plt.figure()
