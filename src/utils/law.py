@@ -56,11 +56,28 @@ class BkginSRDataMixin:
 class SignalStrengthMixin:
 
     # S/(S+B) ratio
-    s_ratio = luigi.FloatParameter(default=0.005)
+    s_ratio_index = luigi.IntParameter(default=5)
+
+    @property
+    def s_ratio(self):
+        conversion = {
+            0: 0.0,
+            1: 0.00031622776601683794,
+            2: 0.0005551935914386209,
+            3: 0.0009747402255566064,
+            4: 0.001711328304161781,
+            5: 0.0030045385302046933,
+            6: 0.00527499706370262,
+            7: 0.009261187281287938,
+            8: 0.01625964693881482,
+            9: 0.02854667663497933,
+            10: 0.05011872336272722,
+        }
+
+        return conversion[self.s_ratio_index]
 
     def store_parts(self):
-        return super().store_parts() + (f"s_ratio_{str_encode_value(self.s_ratio)}",)
-
+        return super().store_parts() + (f"s_index_{self.s_ratio_index}_ratio_{str_encode_value(self.s_ratio)}",)
 
 class TemplateRandomMixin:
 
@@ -72,10 +89,19 @@ class TemplateRandomMixin:
 
 class TranvalSplitRandomMixin:
 
-    sample_random_seed = luigi.IntParameter(default=42)
+    trainval_split_seed = luigi.IntParameter(default=0)
 
     def store_parts(self):
-        return super().store_parts() + (f"trainval_split_seed_{self.sample_random_seed}",)
+        return super().store_parts() + (f"trainval_split_seed_{self.trainval_split_seed}",)
+    
+
+class TestSetMixin:
+
+    use_true_mu = luigi.BoolParameter(default=True)
+    test_set_fold = luigi.IntParameter(default=0)
+
+    def store_parts(self):
+        return super().store_parts() + (f"use_true_mu_{self.use_true_mu}", f"test_set_fold_{self.test_set_fold}",)
 
     
 class BkgTemplateUncertaintyMixin:
@@ -93,10 +119,20 @@ class SigTemplateTrainingUncertaintyMixin:
     def store_parts(self):
         return super().store_parts() + (f"train_num_templates_{self.train_num_sig_templates}",)
 
-class SigTemplateSplittingUncertaintyMixin:
+class TranvalSplitUncertaintyMixin:
     
     # controls the random seed for the splitting train val set
     split_num_sig_templates = luigi.IntParameter(default=5)
 
     def store_parts(self):
         return super().store_parts() + (f"split_num_templates_{self.split_num_sig_templates}",)
+    
+
+class WScanMixin:
+
+    w_min = luigi.FloatParameter(default=0.00001)
+    w_max = luigi.FloatParameter(default=0.05)
+    scan_number = luigi.IntParameter(default=20)
+
+    def store_parts(self):
+        return super().store_parts() + (f"w_min_{self.w_min}_w_max_{self.w_max}_scan_{self.scan_number}",)    

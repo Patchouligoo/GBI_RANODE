@@ -12,56 +12,26 @@ def separate_SB_SR(data):
     return data[innermask], data[outermask]
 
 
-def sample_split(signal_path, bkg_path, sig_ratio=0.005, bkg_num_in_sr_data=-1, resample_seed = 42):
-
-    background = np.load(bkg_path)
-    signal = np.load(signal_path)
+def background_split(background, bkg_num_in_sr_data=-1, resample_seed = 42):
 
     # shuffle data
     background = shuffle(background, random_state=resample_seed)
-    signal = shuffle(signal, random_state=resample_seed)
 
     # split bkg into SR and CR
     SR_bkg, CR_bkg = separate_SB_SR(background)
-
-    SR_sig, CR_sig = separate_SB_SR(signal)
-    # for now we ignore signal in CR
 
     if bkg_num_in_sr_data != -1:
         # this includes 50% for training and 25%, 25% for val and test
         SR_bkg = SR_bkg[:bkg_num_in_sr_data]
     
     # split into trainval and test set
-    SR_data_trainval, SR_data_test = train_test_split(SR_bkg, test_size=0.25, random_state=resample_seed)
-
-    # --------------------- trainval set ---------------------
-    # calculate the amount of signal we inject in trainval set
-    num_sig = int(sig_ratio/(1-sig_ratio) * len(SR_data_trainval))
- 
-    SR_sig_injected_trainval = SR_sig[:num_sig]
-
-    # concatenate background and signal
-    SR_data_trainval = np.concatenate((SR_data_trainval, SR_sig_injected_trainval),axis=0)
-    SR_data_trainval = shuffle(SR_data_trainval, random_state=resample_seed)
+    SR_bkg_trainval, SR_bkg_test = train_test_split(SR_bkg, test_size=0.25, random_state=resample_seed)
     
-    true_mu_trainval = (SR_data_trainval[:, -1]==1).sum() / len(SR_data_trainval)
+    print('SR bkg trainval shape: ', SR_bkg_trainval.shape)
+    print('SR bkg test shape: ', SR_bkg_test.shape)
+    print("CR bkg shape: ", CR_bkg.shape)
 
-    # --------------------- test set ---------------------
-    # always inject 50000 signal in test set
-    SR_sig_injected_test = SR_sig[-50000:]
-
-    SR_data_test = np.concatenate((SR_data_test, SR_sig_injected_test),axis=0)
-    SR_data_test = shuffle(SR_data_test, random_state=resample_seed)
-    
-
-    print('SR trainval shape: ', SR_data_trainval.shape)
-    print('SR trainval num sig: ', (SR_data_trainval[:, -1]==1).sum())
-    print('SR trainval true mu: ', true_mu_trainval)
-
-    print('SR test shape: ', SR_data_test.shape)
-    print('SR test num sig: ', (SR_data_test[:, -1]==1).sum())
-
-    return SR_data_trainval, SR_data_test, CR_bkg
+    return SR_bkg_trainval, SR_bkg_test, CR_bkg
 
 
 # def resample_split_test(signal_path, bkg_path, resample_seed = 42):
