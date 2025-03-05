@@ -7,6 +7,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel as C
 from src.utils.utils import NumpyEncoder
+from src.utils.utils import find_zero_crossings
 
 def fit_likelihood(x_values, y_values_mean, y_values_std, w_true, events_num, output_path, logbased=True):
 
@@ -158,8 +159,21 @@ def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_
     max_likelihood_index = np.argmax(y_pred)
     max_likelihood_w = np.power(10, x_pred[max_likelihood_index])
     max_likelihood_w_log = x_pred[max_likelihood_index]
-
+    
+    # ------------------------------- 95% CI of max likelihood -------------------------------
     CI95_likelihood = max_likelihood - np.log(2)/event_num
+    diff = y_pred_upper_bound - CI95_likelihood
+    crossings = find_zero_crossings(x_pred, diff)
+    # Separate them into those on the left vs. right of the maximum
+    left_crossings  = [c for c in crossings if c < max_likelihood_w_log]
+    right_crossings = [c for c in crossings if c > max_likelihood_w_log]
+    # If there is more than one intersection on each side, we take the
+    # minimum on the left and the maximum on the right to be conservative
+    x_left = min(left_crossings) if left_crossings else None
+    x_right = max(right_crossings) if right_crossings else None
+
+    mu_left = 10**x_left if x_left is not None else 0
+    mu_right = 10**x_right if x_right is not None else 1
 
     # make plots
     f = plt.figure()
@@ -172,7 +186,7 @@ def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_
 
     # plot 95% CI and the peak
     plt.scatter([max_likelihood_w_log], [max_likelihood], color='red', label=f'peak $\mu$ {max_likelihood_w:.4f}')  # peak w value
-    plt.axhline(y=CI95_likelihood, color='blue', linestyle='--')
+    plt.axhline(y=CI95_likelihood, color='blue', linestyle='--', label=f'95% CI, [{mu_left:.4f}, {mu_right:.4f}]')
 
     plt.axvline(x=np.log10(mu_true), color='black', linestyle='--', label=f'true $\mu$ {mu_true:.4f}')
 

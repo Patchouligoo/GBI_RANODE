@@ -105,6 +105,8 @@ class FittingValResults(
         y_pred_list = np.array(y_pred_list)
         y_mean = np.mean(y_pred_list, axis=0)
         y_std = np.std(y_pred_list, axis=0)
+        y_upper = y_mean + 1.96*y_std
+        y_lower = y_mean - 1.96*y_std
 
         max_likelihood_index = np.argmax(y_mean)
         max_likelihood = y_mean[max_likelihood_index]
@@ -113,7 +115,8 @@ class FittingValResults(
         CI95_value = max_likelihood - CI95_drop
 
         # find left and right CI95 crossing points
-        diff = y_mean - CI95_value
+        # using upper bound to be more conservative
+        diff = y_upper - CI95_value
         from src.utils.utils import find_zero_crossings
         # Get all zero-crossing points
         crossings = find_zero_crossings(x_pred, diff)
