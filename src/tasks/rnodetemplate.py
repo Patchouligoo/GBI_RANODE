@@ -7,12 +7,12 @@ import pandas as pd
 import json
 
 from src.utils.law import (
-    BaseTask, 
-    SignalStrengthMixin, 
-    TranvalSplitRandomMixin, 
-    TemplateRandomMixin, 
-    TranvalSplitUncertaintyMixin, 
-    SigTemplateTrainingUncertaintyMixin, 
+    BaseTask,
+    SignalStrengthMixin,
+    TranvalSplitRandomMixin,
+    TemplateRandomMixin,
+    TranvalSplitUncertaintyMixin,
+    SigTemplateTrainingUncertaintyMixin,
     ProcessMixin,
     TestSetMixin,
     WScanMixin,
@@ -29,7 +29,7 @@ class RNodeTemplate(
     ProcessMixin,
     BaseTask,
 ):
-    
+
     device = luigi.Parameter(default="cuda:0")
     batchsize = luigi.IntParameter(default=2048)
     epoches = luigi.IntParameter(default=100)
@@ -42,27 +42,46 @@ class RNodeTemplate(
 
     def requires(self):
         return {
-            'preprocessed_data': PreprocessingTrainval.req(self, trainval_split_seed=self.trainval_split_seed, s_ratio_index=self.s_ratio_index),
-            'bkgprob': PredictBkgProbTrainVal.req(self, trainval_split_seed=self.trainval_split_seed , s_ratio_index=self.s_ratio_index),
+            "preprocessed_data": PreprocessingTrainval.req(
+                self,
+                trainval_split_seed=self.trainval_split_seed,
+                s_ratio_index=self.s_ratio_index,
+            ),
+            "bkgprob": PredictBkgProbTrainVal.req(
+                self,
+                trainval_split_seed=self.trainval_split_seed,
+                s_ratio_index=self.s_ratio_index,
+            ),
         }
 
     def output(self):
         return {
-            "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
+            "sig_models": [
+                self.local_target(f"model_S_{i}.pt")
+                for i in range(self.num_model_to_save)
+            ],
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
             "metadata": self.local_target("metadata.json"),
         }
-    
-    @law.decorator.safe_output 
+
+    @law.decorator.safe_output
     def run(self):
 
         input_dict = {
             "preprocessing": {
-                "data_train_SR_model_S": self.input()["preprocessed_data"]["SR_data_train_model_S"],
-                "data_val_SR_model_S": self.input()["preprocessed_data"]["SR_data_val_model_S"], 
-                "data_train_SR_model_B": self.input()["preprocessed_data"]["SR_data_train_model_B"],
-                "data_val_SR_model_B":  self.input()["preprocessed_data"]["SR_data_val_model_B"],
+                "data_train_SR_model_S": self.input()["preprocessed_data"][
+                    "SR_data_train_model_S"
+                ],
+                "data_val_SR_model_S": self.input()["preprocessed_data"][
+                    "SR_data_val_model_S"
+                ],
+                "data_train_SR_model_B": self.input()["preprocessed_data"][
+                    "SR_data_train_model_B"
+                ],
+                "data_val_SR_model_B": self.input()["preprocessed_data"][
+                    "SR_data_val_model_B"
+                ],
                 "SR_mass_hist": self.input()["preprocessed_data"]["SR_mass_hist"],
             },
             "bkgprob": {
@@ -71,9 +90,22 @@ class RNodeTemplate(
             },
         }
 
-        print(f"train model S with train random seed {self.train_random_seed}, sample random seed {self.trainval_split_seed}, s_ratio {self.s_ratio}")
+        print(
+            f"train model S with train random seed {self.train_random_seed}, sample random seed {self.trainval_split_seed}, s_ratio {self.s_ratio}"
+        )
         from src.models.train_model_S import train_model_S
-        train_model_S(input_dict, self.output(), self.s_ratio, self.w_value, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
+
+        train_model_S(
+            input_dict,
+            self.output(),
+            self.s_ratio,
+            self.w_value,
+            self.batchsize,
+            self.epoches,
+            self.num_model_to_save,
+            self.train_random_seed,
+            self.device,
+        )
 
 
 class CoarseScanRANODEFixedSplitSeed(
@@ -88,10 +120,20 @@ class CoarseScanRANODEFixedSplitSeed(
     def requires(self):
 
         model_list = {}
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range = np.logspace(
+            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
+        )
 
         for index in range(self.scan_number):
-            model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], trainval_split_seed=self.trainval_split_seed , train_random_seed=i) for i in range(self.train_num_sig_templates)]
+            model_list[f"model_{index}"] = [
+                RNodeTemplate.req(
+                    self,
+                    w_value=w_range[index],
+                    trainval_split_seed=self.trainval_split_seed,
+                    train_random_seed=i,
+                )
+                for i in range(self.train_num_sig_templates)
+            ]
 
         return model_list
 
@@ -105,7 +147,9 @@ class CoarseScanRANODEFixedSplitSeed(
     @law.decorator.safe_output
     def run(self):
 
-        w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_range = np.logspace(
+            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
+        )
         w_range_log = np.log10(w_range)
 
         val_loss_scan = []
@@ -125,7 +169,10 @@ class CoarseScanRANODEFixedSplitSeed(
                 val_loss_list.extend(min_val_loss_list)
 
                 # save model paths
-                model_path_list_i = [model_i.path for model_i in self.input()[f"model_{index_w}"][i]["sig_models"]]
+                model_path_list_i = [
+                    model_i.path
+                    for model_i in self.input()[f"model_{index_w}"][i]["sig_models"]
+                ]
                 model_path_list.extend(model_path_list_i)
 
             val_loss_scan.append(val_loss_list)
@@ -138,14 +185,23 @@ class CoarseScanRANODEFixedSplitSeed(
         val_loss_scan_std = np.std(val_loss_scan, axis=1)
 
         from src.fitting.fitting import fit_likelihood
-        self.output()["coarse_scan_plot"].parent.touch()
-        output_metadata = fit_likelihood(w_range_log, val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["coarse_scan_plot"].path)
 
-        with open(self.output()["scan_result"].path, 'w') as f:
+        self.output()["coarse_scan_plot"].parent.touch()
+        output_metadata = fit_likelihood(
+            w_range_log,
+            val_loss_scan_mean,
+            val_loss_scan_std,
+            np.log10(self.s_ratio),
+            val_events_num,
+            self.output()["coarse_scan_plot"].path,
+        )
+
+        with open(self.output()["scan_result"].path, "w") as f:
             json.dump(output_metadata, f, cls=NumpyEncoder)
 
-        with open(self.output()["model_list"].path, 'w') as f:
+        with open(self.output()["model_list"].path, "w") as f:
             json.dump(model_path_list_scan, f, cls=NumpyEncoder)
+
 
 class CoarseScanRANODEoverW(
     SigTemplateTrainingUncertaintyMixin,
@@ -162,27 +218,36 @@ class CoarseScanRANODEoverW(
         trainval_seed_results = {}
 
         for index in range(self.split_num_sig_templates):
-            trainval_seed_results[f"trainval_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
+            trainval_seed_results[f"trainval_seed_{index}"] = (
+                CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
+            )
 
         return {
             "model_S_scan_result": trainval_seed_results,
             "test_data": PreprocessingTest.req(self),
             "bkgprob_test": PredictBkgProbTest.req(self),
         }
-    
+
     def output(self):
         return {
             "prob_S_scan": self.local_target("prob_S_scan.npy"),
             "prob_B_scan": self.local_target("prob_B_scan.npy"),
         }
-    
+
     @law.decorator.safe_output
     def run(self):
-        
+
         # load model list
-        model_scan_dict = {f"scan_index_{index}":[] for index in range(self.scan_number)}
+        model_scan_dict = {
+            f"scan_index_{index}": [] for index in range(self.scan_number)
+        }
         for index in range(self.train_num_sig_templates):
-            with open(self.input()["model_S_scan_result"][f"trainval_seed_{index}"]["model_list"].path, 'r') as f:
+            with open(
+                self.input()["model_S_scan_result"][f"trainval_seed_{index}"][
+                    "model_list"
+                ].path,
+                "r",
+            ) as f:
                 model_list = json.load(f)
                 for key, value in model_list.items():
                     model_scan_dict[key].extend(value)
@@ -196,7 +261,9 @@ class CoarseScanRANODEoverW(
 
         from src.models.ranode_pred import ranode_pred
 
-        w_scan_list = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_scan_list = np.logspace(
+            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
+        )
         prob_S_list = []
         prob_B_list = []
 
@@ -204,7 +271,7 @@ class CoarseScanRANODEoverW(
             w_value = w_scan_list[w_index]
 
             print(f"evaluating scan index {w_index}, w value {w_value}")
-            
+
             model_list = model_scan_dict[f"scan_index_{w_index}"]
             prob_S, prob_B = ranode_pred(model_list, w_value, test_data, bkg_prob)
 
@@ -219,14 +286,13 @@ class CoarseScanRANODEoverW(
         np.save(self.output()["prob_B_scan"].path, prob_B_list)
 
 
-
 # class FineScanRANOD(
 #     TemplateRandomMixin,
 #     SignalStrengthMixin,
 #     ProcessMixin,
 #     BaseTask,
 # ):
-    
+
 #     fine_scan_index = luigi.IntParameter(default=0)
 #     num_fine_scan = luigi.IntParameter(default=10)
 #     batchsize = luigi.IntParameter(default=2048)
@@ -243,15 +309,15 @@ class CoarseScanRANODEoverW(
 #             'preprocessing': Preprocessing.req(self),
 #             'bkgprob': PredictBkgProb.req(self),
 #         }
-    
+
 #     def output(self):
 #         return {
 #             "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
 #             "trainloss_list": self.local_target("trainloss_list.npy"),
 #             "valloss_list": self.local_target("valloss_list.npy"),
 #             "metadata": self.local_target("metadata.json"),
-#         } 
-    
+#         }
+
 #     @law.decorator.safe_output
 #     def run(self):
 
@@ -269,7 +335,7 @@ class CoarseScanRANODEoverW(
 #         print("current value ", curr_mu)
 
 #         from src.models.train_model_S import train_model_S
-#         train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)        
+#         train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)
 
 
 # class FineScanRANODEoverW(
@@ -278,9 +344,9 @@ class CoarseScanRANODEoverW(
 #     ProcessMixin,
 #     BaseTask,
 # ):
-    
+
 #     num_fine_scan = luigi.IntParameter(default=10)
-    
+
 #     def requires(self):
 
 #         model_list = {}
@@ -291,16 +357,16 @@ class CoarseScanRANODEoverW(
 #             "fine_scan_models": model_list,
 #             "coarse_scan": CoarseScanRANODEoverW.req(self),
 #         }
-    
+
 #     def output(self):
 #         return {
 #             "scan_result": self.local_target("scan_result.json"),
 #             "fine_scan_plot": self.local_target("fitting_result.pdf"),
 #         }
-    
+
 #     @law.decorator.safe_output
 #     def run(self):
-        
+
 #         with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
 #             peak_info = json.load(f)
 
@@ -324,7 +390,7 @@ class CoarseScanRANODEoverW(
 #                 val_events_num = metadata_w_i["num_val_events"]
 #                 val_loss_list.extend(min_val_loss_list)
 
-#             val_loss_scan.append(val_loss_list) 
+#             val_loss_scan.append(val_loss_list)
 
 #         # pick the top 20 models with smallest loss
 #         val_loss_scan = np.array(val_loss_scan)
@@ -368,13 +434,13 @@ class CoarseScanRANODEoverW(
 #         with open(self.output()["scan_result"].path, 'w') as f:
 #             json.dump(scan_result, f, cls=NumpyEncoder)
 
-        
+
 # class GenerateSignals(
-#    ScanRANODEoverW, 
+#    ScanRANODEoverW,
 # ):
 #     device = luigi.Parameter(default="cuda")
 #     n_signal_samples = luigi.IntParameter(default=10000)
-    
+
 #     def requires(self):
 #         model_list = {}
 #         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
@@ -387,7 +453,7 @@ class CoarseScanRANODEoverW(
 #         return {
 #             "models": model_list,
 #             "w_scan_results": w_scan_results,
-#         } 
+#         }
 
 #     def output(self):
 #         return {
@@ -481,15 +547,15 @@ class CoarseScanRANODEoverW(
 
 #         self.output().parent.touch()
 #         with PdfPages(self.output().path) as pdf:
-            
+
 #             for feature_index in range(signal_val_features.shape[1]):
 
 #                 bins = np.linspace(bkg_val_features[:, feature_index].min(), bkg_val_features[:, feature_index].max(), self.nbins)
-                                   
+
 #                 f = plt.figure()
 #                 plt.hist(signal_val_features[:, feature_index], bins=bins, alpha=0.5, label='val signal', density=True, histtype='step', lw=3)
 #                 plt.hist(bkg_val_features[:, feature_index], bins=bins, alpha=0.5, label='val bkg', density=True, histtype='step', lw=3)
-#                 plt.hist(generated_signal_features[:, feature_index], bins=bins, weights=generated_signal_weights, 
+#                 plt.hist(generated_signal_features[:, feature_index], bins=bins, weights=generated_signal_weights,
 #                          alpha=0.5, label='generated signal', density=True, histtype='step', lw=3)
 #                 plt.xlabel(f'feature {feature_index}')
 #                 plt.ylabel('density')
@@ -498,6 +564,3 @@ class CoarseScanRANODEoverW(
 #                 plt.yscale('log')
 #                 pdf.savefig(f)
 #                 plt.close(f)
-
-
-
