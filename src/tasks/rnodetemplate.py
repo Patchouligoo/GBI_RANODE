@@ -236,6 +236,7 @@ class CoarseScanRANODEoverW(
         return {
             "prob_S_scan": self.local_target("prob_S_scan.npy"),
             "prob_B_scan": self.local_target("prob_B_scan.npy"),
+            "truth_label": self.local_target("truth_label.npy"),
         }
 
     @law.decorator.safe_output
@@ -258,6 +259,7 @@ class CoarseScanRANODEoverW(
 
         # load test data
         test_data = self.input()["test_data"]
+        truth_label = np.load(test_data["SR_data_test_model_S"].path)[:, -1]
 
         # load bkg prob
         bkg_prob = self.input()["bkgprob_test"]["log_B_test"]
@@ -288,6 +290,7 @@ class CoarseScanRANODEoverW(
         self.output()["prob_S_scan"].parent.touch()
         np.save(self.output()["prob_S_scan"].path, prob_S_list)
         np.save(self.output()["prob_B_scan"].path, prob_B_list)
+        np.save(self.output()["truth_label"].path, truth_label)
 
 
 # class FineScanRANOD(
