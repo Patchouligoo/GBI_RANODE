@@ -15,6 +15,7 @@ from src.utils.law import (
     SignalStrengthMixin,
     TemplateRandomMixin,
     BkgTemplateUncertaintyMixin,
+    BkgModelMixin,
     TranvalSplitRandomMixin,
     ProcessMixin,
     TestSetMixin,
@@ -246,8 +247,118 @@ class BkgTemplateChecking(
                 plt.close(f)
 
 
+# --------------------------------- Ideal Bkg Model ---------------------------------
+class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
+    device = luigi.Parameter(default="cuda")
+    batchsize = luigi.IntParameter(default=2048)
+    epochs = luigi.IntParameter(default=200)
+    num_model_to_save = luigi.IntParameter(default=10)
+
+    def requires(self):
+        return PreprocessingTrainval.req(
+            self, s_ratio_index=0, trainval_split_seed=self.train_random_seed
+        )
+
+    def output(self):
+        return {
+            "bkg_models": [
+                self.local_target("model_CR_" + str(i) + ".pt")
+                for i in range(self.num_model_to_save)
+            ],
+            "trainloss_list": self.local_target("trainloss_list.npy"),
+            "valloss_list": self.local_target("valloss_list.npy"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+
+        # freeze the random seed of torch
+        torch.manual_seed(self.train_random_seed)
+
+        # need:
+        # "data_train_CR": self.local_target("data_train_cr.npy"),
+        # "data_val_CR": self.local_target("data_val_cr.npy"),
+
+        # load bkg in SR but no label
+        data_train_SR = np.load(self.input()["SR_data_train_model_B"].path)
+        data_val_SR = np.load(self.input()["SR_data_val_model_B"].path)
+        assert data_train_SR[:, -1].sum() == 0, "data_train_SR should have no signal"
+        assert data_val_SR[:, -1].sum() == 0, "data_val_SR should have no signal"
+
+        traintensor = torch.from_numpy(data_train_SR.astype("float32")).to(self.device)
+        valtensor = torch.from_numpy(data_val_SR.astype("float32")).to(self.device)
+
+        train_tensor = torch.utils.data.TensorDataset(traintensor)
+        val_tensor = torch.utils.data.TensorDataset(valtensor)
+
+        trainloader = torch.utils.data.DataLoader(
+            train_tensor, batch_size=self.batchsize, shuffle=True
+        )
+        valloader = torch.utils.data.DataLoader(
+            val_tensor, batch_size=self.batchsize * 5, shuffle=False
+        )
+
+        # define model
+        from src.models.model_B import DensityEstimator, anode
+
+        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
+
+        model_B = DensityEstimator(config_file, eval_mode=False, device=self.device)
+
+        trainloss_list = []
+        valloss_list = []
+        model_list = []
+
+        # no early stopping, just run 200 epochs and take num_model_to_save lowest valloss models
+        for epoch in range(self.epochs):
+
+            trainloss = anode(
+                model_B.model,
+                trainloader,
+                model_B.optimizer,
+                params=None,
+                device=self.device,
+                mode="train",
+            )
+            valloss = anode(
+                model_B.model,
+                valloader,
+                model_B.optimizer,
+                params=None,
+                device=self.device,
+                mode="val",
+            )
+
+            # torch.save(model_B.model.state_dict(), scrath_path+'/model_B/model_CR_'+str(epoch)+'.pt')
+            state_dict = copy.deepcopy(
+                {k: v.cpu() for k, v in model_B.model.state_dict().items()}
+            )
+            model_list.append(state_dict)
+
+            valloss_list.append(valloss)
+            trainloss_list.append(trainloss)
+
+            print("epoch: ", epoch, "trainloss: ", trainloss, "valloss: ", valloss)
+
+        # save trainings and validation losses
+        trainloss_list = np.array(trainloss_list)
+        valloss_list = np.array(valloss_list)
+        self.output()["trainloss_list"].parent.touch()
+        np.save(self.output()["trainloss_list"].path, trainloss_list)
+        np.save(self.output()["valloss_list"].path, valloss_list)
+
+        # save best models
+        best_models = np.argsort(valloss_list)
+        for i in range(self.num_model_to_save):
+            print(
+                f"best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}"
+            )
+            torch.save(model_list[best_models[i]], self.output()["bkg_models"][i].path)
+
+
 class PredictBkgProbTrainVal(
     BkgTemplateUncertaintyMixin,
+    BkgModelMixin,
     TranvalSplitRandomMixin,
     SignalStrengthMixin,
     ProcessMixin,
@@ -258,15 +369,27 @@ class PredictBkgProbTrainVal(
     device = luigi.Parameter(default="cuda")
 
     def requires(self):
-        return {
-            "bkg_models": [
-                BkgTemplateTraining.req(self, train_random_seed=i)
-                for i in range(self.num_bkg_templates)
-            ],
-            "preprocessed_data": PreprocessingTrainval.req(
-                self, trainval_split_seed=self.trainval_split_seed
-            ),
-        }
+
+        if self.use_perfect_bkg_model:
+            return {
+                "bkg_models": [
+                    PerfectBkgTemplateTraining.req(self, train_random_seed=i)
+                    for i in range(self.num_bkg_templates)
+                ],
+                "preprocessed_data": PreprocessingTrainval.req(
+                    self, trainval_split_seed=self.trainval_split_seed
+                ),
+            }
+        else:
+            return {
+                "bkg_models": [
+                    BkgTemplateTraining.req(self, train_random_seed=i)
+                    for i in range(self.num_bkg_templates)
+                ],
+                "preprocessed_data": PreprocessingTrainval.req(
+                    self, trainval_split_seed=self.trainval_split_seed
+                ),
+            }
 
     def output(self):
         return {
@@ -343,6 +466,7 @@ class PredictBkgProbTrainVal(
 
 class PredictBkgProbTest(
     BkgTemplateUncertaintyMixin,
+    BkgModelMixin,
     TestSetMixin,
     SignalStrengthMixin,
     ProcessMixin,
@@ -353,15 +477,27 @@ class PredictBkgProbTest(
     device = luigi.Parameter(default="cuda")
 
     def requires(self):
-        return {
-            "bkg_models": [
-                BkgTemplateTraining.req(self, train_random_seed=i)
-                for i in range(self.num_bkg_templates)
-            ],
-            "preprocessed_test_data": PreprocessingTest.req(
-                self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
-            ),
-        }
+
+        if self.use_perfect_bkg_model:
+            return {
+                "bkg_models": [
+                    PerfectBkgTemplateTraining.req(self, train_random_seed=i)
+                    for i in range(self.num_bkg_templates)
+                ],
+                "preprocessed_test_data": PreprocessingTest.req(
+                    self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
+                ),
+            }
+        else:
+            return {
+                "bkg_models": [
+                    BkgTemplateTraining.req(self, train_random_seed=i)
+                    for i in range(self.num_bkg_templates)
+                ],
+                "preprocessed_test_data": PreprocessingTest.req(
+                    self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
+                ),
+            }
 
     def output(self):
         return {

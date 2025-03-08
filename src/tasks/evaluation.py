@@ -17,6 +17,7 @@ from src.utils.law import (
     SigTemplateTrainingUncertaintyMixin,
     ProcessMixin,
     TestSetMixin,
+    BkgModelMixin,
     WScanMixin,
 )
 from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest

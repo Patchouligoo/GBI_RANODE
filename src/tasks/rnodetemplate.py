@@ -16,6 +16,7 @@ from src.utils.law import (
     ProcessMixin,
     TestSetMixin,
     WScanMixin,
+    BkgModelMixin,
 )
 from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
 from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
@@ -25,6 +26,7 @@ from src.utils.utils import NumpyEncoder, str_encode_value
 class RNodeTemplate(
     TranvalSplitRandomMixin,
     TemplateRandomMixin,
+    BkgModelMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -112,6 +114,7 @@ class CoarseScanRANODEFixedSplitSeed(
     SigTemplateTrainingUncertaintyMixin,
     TranvalSplitRandomMixin,
     WScanMixin,
+    BkgModelMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -206,6 +209,7 @@ class CoarseScanRANODEFixedSplitSeed(
 class CoarseScanRANODEoverW(
     SigTemplateTrainingUncertaintyMixin,
     TranvalSplitUncertaintyMixin,
+    BkgModelMixin,
     TestSetMixin,
     WScanMixin,
     SignalStrengthMixin,

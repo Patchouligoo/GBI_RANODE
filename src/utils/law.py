@@ -125,6 +125,16 @@ class BkgTemplateUncertaintyMixin:
         return super().store_parts() + (f"num_templates_{self.num_bkg_templates}",)
 
 
+class BkgModelMixin:
+
+    use_perfect_bkg_model = luigi.BoolParameter(default=False)
+
+    def store_parts(self):
+        return super().store_parts() + (
+            f"use_perfect_bkg_model_{self.use_perfect_bkg_model}",
+        )
+
+
 class SigTemplateTrainingUncertaintyMixin:
 
     # controls the random seed for the training
