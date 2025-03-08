@@ -113,7 +113,9 @@ def bootstrap_and_fit(prob_S_list, prob_B_list, mu_scan_values, mu_true, output_
     
     # Now bootstrap classifiers in model_S to get the uncertainty in the likelihood
     np.random.seed(random_seed)
-    bootstrap_model_S_index = np.random.choice(len(prob_S_list[0]), size=(bootstrap_num, 1), replace=True)
+    bootstrap_model_S_index = np.random.choice(
+        len(prob_S_list[0]), size=(bootstrap_num, len(prob_S_list[0])), replace=True
+    )
     # bootstrap_model_B_index = np.random.choice(len(prob_B_list[0]), size=(bootstrap_num, len(prob_B_list[0])), replace=True)
     bootstrap_log_likelihood = []
 
