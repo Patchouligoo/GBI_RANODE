@@ -236,7 +236,7 @@ class CoarseScanRANODEoverW(
         return {
             "prob_S_scan": self.local_target("prob_S_scan.npy"),
             "prob_B_scan": self.local_target("prob_B_scan.npy"),
-            "truth_label": self.local_target("truth_label.npy"),
+            # "truth_label": self.local_target("truth_label.npy"),
         }
 
     @law.decorator.safe_output
