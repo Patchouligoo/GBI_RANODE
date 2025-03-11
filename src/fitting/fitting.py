@@ -141,9 +141,12 @@ def bootstrap_and_fit(
     # compute the nominal likelihood
     prob_S_nominal = prob_S_list.mean(axis=1)  # shape is (num_scan_points, num_events)
     prob_B_nominal = prob_B_list.mean(axis=1)  # shape is (num_scan_points, num_events)
-    # likelihood_nominal = mu_scan_values.reshape(-1, 1) * prob_S_nominal + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_nominal
-    # log_likelihood_nominal = np.log(likelihood_nominal)
-    # log_likelihood_nominal_mean = log_likelihood_nominal.mean(axis=1)
+    likelihood_nominal = (
+        mu_scan_values.reshape(-1, 1) * prob_S_nominal
+        + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_nominal
+    )
+    log_likelihood_nominal = np.log(likelihood_nominal)
+    log_likelihood_nominal_mean = log_likelihood_nominal.mean(axis=1)
 
     # Now bootstrap classifiers in model_S to get the uncertainty in the likelihood
     np.random.seed(random_seed)
@@ -170,7 +173,6 @@ def bootstrap_and_fit(
         bootstrap_log_likelihood.append(log_likelihood_bootstrap_i_mean)
 
     bootstrap_log_likelihood = np.array(bootstrap_log_likelihood)
-    log_likelihood_nominal_mean = bootstrap_log_likelihood.mean(axis=0)
     log_likelihood_nominal_std = np.std(bootstrap_log_likelihood, axis=0)
 
     # -------------------- make fitting and save the info --------------------
@@ -203,8 +205,10 @@ def bootstrap_and_fit(
     max_likelihood_w = np.power(10, x_pred[max_likelihood_index])
     max_likelihood_w_log = x_pred[max_likelihood_index]
 
+    max_likelihood_lower_bound = y_pred_lower_bound[max_likelihood_index]
+
     # ------------------------------- 95% CI of max likelihood -------------------------------
-    CI95_likelihood = max_likelihood - np.log(2) / event_num
+    CI95_likelihood = max_likelihood_lower_bound - np.log(2) / event_num
     diff = y_pred_upper_bound - CI95_likelihood
     crossings = find_zero_crossings(x_pred, diff)
     # Separate them into those on the left vs. right of the maximum
@@ -263,5 +267,15 @@ def bootstrap_and_fit(
     plt.ylabel("likelihood")
 
     plt.legend()
-    plt.savefig(output_dir)
+    plt.savefig(output_dir["scan_plot"].path)
     plt.close()
+
+    output_info = {
+        "mu_true": mu_true,
+        "mu_pred": max_likelihood_w,
+        "left_CI": mu_left,
+        "right_CI": mu_right,
+    }
+
+    with open(output_dir["peak_info"].path, "w") as f:
+        json.dump(output_info, f, cls=NumpyEncoder)
