@@ -7,6 +7,7 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.ticker as mticker
 
 from src.utils.law import (
     BaseTask,
@@ -57,8 +58,95 @@ class FittingScanResults(
         from src.fitting.fitting import bootstrap_and_fit
 
         self.output()["scan_plot"].parent.touch()
-        output_dir = self.output()["scan_plot"].path
+        output_dir = self.output()
         bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
+
+
+class ScanOverTrueMu(
+    BkgModelMixin,
+    ProcessMixin,
+    BaseTask,
+):
+
+    scan_index = luigi.ListParameter(default=[0, 3, 5, 6, 7])
+
+    def requires(self):
+        # return [
+        #     FittingScanResults.req(self, s_ratio_index=index)
+        #     for index in self.scan_index
+        # ]
+        return [
+            FittingScanResults.req(self, s_ratio_index=0),
+            FittingScanResults.req(self, s_ratio_index=3),
+            FittingScanResults.req(self, s_ratio_index=5),
+            FittingScanResults.req(self, s_ratio_index=6, w_min=0.0001),
+            FittingScanResults.req(self, s_ratio_index=7),
+        ]
+
+    def output(self):
+        return self.local_target("scan_plot.pdf")
+
+    @law.decorator.safe_output
+    def run(self):
+
+        mu_true_list = []
+        mu_pred_list = []
+        mu_lowerbound_list = []
+        mu_upperbound_list = []
+
+        for index in range(len(self.scan_index)):
+            with open(self.input()[index]["peak_info"].path, "r") as f:
+                peak_info = json.load(f)
+
+            mu_true = peak_info["mu_true"] * 100
+            mu_pred = peak_info["mu_pred"] * 100
+            mu_lowerbound = peak_info["left_CI"] * 100
+            mu_upperbound = peak_info["right_CI"] * 100
+
+            mu_true_list.append(mu_true)
+            mu_pred_list.append(mu_pred)
+            mu_lowerbound_list.append(mu_lowerbound)
+            mu_upperbound_list.append(mu_upperbound)
+
+        # plot
+        self.output().parent.touch()
+        with PdfPages(self.output().path) as pdf:
+            f = plt.figure()
+            plt.plot(mu_true_list, mu_pred_list, color="red")
+            plt.scatter(mu_true_list, mu_pred_list, label="pred $\mu$", color="red")
+            plt.fill_between(
+                mu_true_list,
+                mu_lowerbound_list,
+                mu_upperbound_list,
+                alpha=0.2,
+                color="red",
+            )
+            plt.plot(
+                np.linspace(0, 5, 100),
+                np.linspace(0, 5, 100),
+                label="true $\mu$",
+                color="black",
+            )
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.xlim(0.008, 7)
+            plt.ylim(0.008, 7)
+            plt.xlabel("$\mu$ (%)")
+            plt.ylabel("$\mu$ (%)")
+
+            # set x and y axis to be non-scientific
+            ax = plt.gca()
+            ax.xaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax.xaxis.get_major_formatter().set_scientific(False)
+            ax.xaxis.get_major_formatter().set_useOffset(False)
+            ax.yaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax.yaxis.get_major_formatter().set_scientific(False)
+            ax.yaxis.get_major_formatter().set_useOffset(False)
+
+            plt.title("Scan over true $\mu$")
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)
 
 
 class FittingValResults(
