@@ -61,7 +61,7 @@ class BkginSRDataMixin:
 class SignalStrengthMixin:
 
     # S/(S+B) ratio
-    s_ratio_index = luigi.IntParameter(default=5)
+    s_ratio_index = luigi.IntParameter(default=8)
 
     @property
     def s_ratio(self):
