@@ -99,7 +99,7 @@ class TemplateRandomMixin:
 
 class TranvalSplitRandomMixin:
 
-    trainval_split_seed = luigi.IntParameter(default=0)
+    trainval_split_seed = luigi.IntParameter(default=1)
 
     def store_parts(self):
         return super().store_parts() + (

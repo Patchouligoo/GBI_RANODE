@@ -221,7 +221,7 @@ class CoarseScanRANODEoverW(
 
         trainval_seed_results = {}
 
-        for index in range(self.split_num_sig_templates):
+        for index in range(1, self.split_num_sig_templates + 1):  # start from 1
             trainval_seed_results[f"trainval_seed_{index}"] = (
                 CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
             )
