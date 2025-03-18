@@ -27,17 +27,14 @@ class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
     device = luigi.Parameter(default="cuda")
     batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=200)
-    num_model_to_save = luigi.IntParameter(default=10)
+    early_stopping_patience = luigi.IntParameter(default=20)
 
     def requires(self):
         return ProcessBkg.req(self)
 
     def output(self):
         return {
-            "bkg_models": [
-                self.local_target("model_CR_" + str(i) + ".pt")
-                for i in range(self.num_model_to_save)
-            ],
+            "bkg_model": self.local_target("model_B_CR.pt"),
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
         }
@@ -78,9 +75,9 @@ class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
 
         trainloss_list = []
         valloss_list = []
-        model_list = []
+        min_valloss = np.inf
+        patience = 0
 
-        # no early stopping, just run 200 epochs and take num_model_to_save lowest valloss models
         for epoch in range(self.epochs):
 
             trainloss = anode(
@@ -104,10 +101,20 @@ class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
             state_dict = copy.deepcopy(
                 {k: v.cpu() for k, v in model_B.model.state_dict().items()}
             )
-            model_list.append(state_dict)
 
             valloss_list.append(valloss)
             trainloss_list.append(trainloss)
+
+            # early stopping
+            if valloss < min_valloss:
+                min_valloss = valloss
+                patience = 0
+                best_model = state_dict
+            else:
+                patience += 1
+                if patience > self.early_stopping_patience:
+                    print("early stopping at epoch: ", epoch)
+                    break
 
             print("epoch: ", epoch, "trainloss: ", trainloss, "valloss: ", valloss)
 
@@ -119,12 +126,7 @@ class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
         np.save(self.output()["valloss_list"].path, valloss_list)
 
         # save best models
-        best_models = np.argsort(valloss_list)
-        for i in range(self.num_model_to_save):
-            print(
-                f"best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}"
-            )
-            torch.save(model_list[best_models[i]], self.output()["bkg_models"][i].path)
+        torch.save(best_model, self.output()["bkg_model"].path)
 
 
 class BkgTemplateChecking(
@@ -135,7 +137,6 @@ class BkgTemplateChecking(
 
     device = luigi.Parameter(default="cuda")
     num_CR_samples = luigi.IntParameter(default=100000)
-    num_model_to_save = luigi.IntParameter(default=10)
 
     def requires(self):
         return {
@@ -177,30 +178,23 @@ class BkgTemplateChecking(
         config_file = os.path.join("src", "models", "DE_MAF_model.yml")
 
         for seed_i in range(self.num_bkg_templates):
-            for model_epoch_j in range(self.num_model_to_save):
-                # load the models
-                model_B_seed_i_epoch_j = DensityEstimator(
-                    config_file, eval_mode=True, device=self.device
-                )
-                best_model_dir_seed_i_epoch_j = self.input()["bkg_models"][seed_i][
-                    "bkg_models"
-                ][model_epoch_j].path
-                model_B_seed_i_epoch_j.model.load_state_dict(
-                    torch.load(best_model_dir_seed_i_epoch_j)
-                )
-                model_B_seed_i_epoch_j.model.to(self.device)
-                model_B_seed_i_epoch_j.model.eval()
+            # load the models
+            model_B_seed_i = DensityEstimator(
+                config_file, eval_mode=True, device=self.device
+            )
+            best_model_dir_seed_i = self.input()["bkg_models"][seed_i]["bkg_model"].path
+            model_B_seed_i.model.load_state_dict(torch.load(best_model_dir_seed_i))
+            model_B_seed_i.model.to(self.device)
+            model_B_seed_i.model.eval()
 
-                with torch.no_grad():
-                    sampled_CR_events_seed_i_epoch_j = (
-                        model_B_seed_i_epoch_j.model.sample(
-                            num_samples=len(mass_cond_CR), cond_inputs=mass_cond_CR
-                        )
-                    )
-
-                sampled_CR_events.extend(
-                    sampled_CR_events_seed_i_epoch_j.cpu().numpy().astype("float32")
+            with torch.no_grad():
+                sampled_CR_events_seed_i = model_B_seed_i.model.sample(
+                    num_samples=len(mass_cond_CR), cond_inputs=mass_cond_CR
                 )
+
+            sampled_CR_events.extend(
+                sampled_CR_events_seed_i.cpu().numpy().astype("float32")
+            )
 
         sampled_CR_events = np.array(sampled_CR_events)
         sampled_CR_events_weight = (
@@ -252,7 +246,7 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
     device = luigi.Parameter(default="cuda")
     batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=200)
-    num_model_to_save = luigi.IntParameter(default=10)
+    early_stopping_patience = luigi.IntParameter(default=20)
 
     def requires(self):
         return PreprocessingTrainval.req(
@@ -261,10 +255,7 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
 
     def output(self):
         return {
-            "bkg_models": [
-                self.local_target("model_CR_" + str(i) + ".pt")
-                for i in range(self.num_model_to_save)
-            ],
+            "bkg_model": self.local_target("model_B_SR_perfect.pt"),
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
         }
@@ -307,9 +298,9 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
 
         trainloss_list = []
         valloss_list = []
-        model_list = []
+        min_valloss = np.inf
+        patience = 0
 
-        # no early stopping, just run 200 epochs and take num_model_to_save lowest valloss models
         for epoch in range(self.epochs):
 
             trainloss = anode(
@@ -333,10 +324,20 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
             state_dict = copy.deepcopy(
                 {k: v.cpu() for k, v in model_B.model.state_dict().items()}
             )
-            model_list.append(state_dict)
 
             valloss_list.append(valloss)
             trainloss_list.append(trainloss)
+
+            # early stopping
+            if valloss < min_valloss:
+                min_valloss = valloss
+                patience = 0
+                best_model = state_dict
+            else:
+                patience += 1
+                if patience > self.early_stopping_patience:
+                    print("early stopping at epoch: ", epoch)
+                    break
 
             print("epoch: ", epoch, "trainloss: ", trainloss, "valloss: ", valloss)
 
@@ -348,12 +349,7 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
         np.save(self.output()["valloss_list"].path, valloss_list)
 
         # save best models
-        best_models = np.argsort(valloss_list)
-        for i in range(self.num_model_to_save):
-            print(
-                f"best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}"
-            )
-            torch.save(model_list[best_models[i]], self.output()["bkg_models"][i].path)
+        torch.save(best_model, self.output()["bkg_model"].path)
 
 
 class PredictBkgProbTrainVal(
@@ -365,7 +361,6 @@ class PredictBkgProbTrainVal(
     BaseTask,
 ):
 
-    num_model_to_save = luigi.IntParameter(default=10)
     device = luigi.Parameter(default="cuda")
 
     def requires(self):
@@ -407,13 +402,12 @@ class PredictBkgProbTrainVal(
         model_Bs = []
 
         for i in range(self.num_bkg_templates):
-            for j in range(self.num_model_to_save):
-                model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
-                best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
-                model_B.model.load_state_dict(torch.load(best_model_dir))
-                model_B.model.to("cuda")
-                model_B.model.eval()
-                model_Bs.append(model_B)
+            model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
+            best_model_dir = self.input()["bkg_models"][i]["bkg_model"].path
+            model_B.model.load_state_dict(torch.load(best_model_dir))
+            model_B.model.to("cuda")
+            model_B.model.eval()
+            model_Bs.append(model_B)
 
         # load the sample to compare with
         data_train_SR_B = np.load(
@@ -473,7 +467,6 @@ class PredictBkgProbTest(
     BaseTask,
 ):
 
-    num_model_to_save = luigi.IntParameter(default=10)
     device = luigi.Parameter(default="cuda")
 
     def requires(self):
@@ -514,13 +507,12 @@ class PredictBkgProbTest(
         model_Bs = []
 
         for i in range(self.num_bkg_templates):
-            for j in range(self.num_model_to_save):
-                model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
-                best_model_dir = self.input()["bkg_models"][i]["bkg_models"][j].path
-                model_B.model.load_state_dict(torch.load(best_model_dir))
-                model_B.model.to("cuda")
-                model_B.model.eval()
-                model_Bs.append(model_B)
+            model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
+            best_model_dir = self.input()["bkg_models"][i]["bkg_model"].path
+            model_B.model.load_state_dict(torch.load(best_model_dir))
+            model_B.model.to("cuda")
+            model_B.model.eval()
+            model_Bs.append(model_B)
 
         # load the sample to compare with
         data_test_SR_B = np.load(

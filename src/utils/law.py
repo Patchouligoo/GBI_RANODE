@@ -121,7 +121,7 @@ class TestSetMixin:
 
 class BkgTemplateUncertaintyMixin:
 
-    num_bkg_templates = luigi.IntParameter(default=5)
+    num_bkg_templates = luigi.IntParameter(default=20)
 
     def store_parts(self):
         return super().store_parts() + (f"num_templates_{self.num_bkg_templates}",)
