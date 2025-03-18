@@ -4,6 +4,7 @@ import numpy as np
 from src.data_prep.utils import get_dijetmass_ptetaphi
 from src.utils.utils import str_encode_value
 
+
 def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
@@ -13,7 +14,9 @@ def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
 
     s_ratio_str = str_encode_value(s_ratio)
 
-    data_all_df = h5py.File(input_path, 'r')[f"{mx}_{my}"][s_ratio_str][str(seed)][type][:]
+    data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
+        type
+    ][:]
     # shape is (N, 14) where N is the number of events, the columns orders are
     # pt_j1, eta_j1, phi_j1, mj1, Nj1, tau12j1, tau23j1, pt_j2, eta_j2, phi_j2, mj2, Nj2, tau12j2, tau23j2
     # all units are in TeV already
@@ -39,18 +42,22 @@ def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
     mj1mj2 = np.stack([mj1, mj2], axis=1)
     mjmin = mj1mj2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     mjmax = mj1mj2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
-    
+
     # get tau21j1, tau21j2 and sort by mj1 mj2 in the same way
     tau21j1j2 = np.stack([tau21j1, tau21j2], axis=1)
     tau21min = tau21j1j2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     tau21max = tau21j1j2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
 
-    output = np.stack([mjj, mjmin, mjmax-mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1)
+    output = np.stack(
+        [mjj, mjmin, mjmax - mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1
+    )
 
     np.save(output_path, output)
 
 
-def process_signals_test(input_path, output_path, mx, my, s_ratio, seed, use_true_mu=True):
+def process_signals_test(
+    input_path, output_path, mx, my, s_ratio, seed, use_true_mu=True
+):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
@@ -59,13 +66,21 @@ def process_signals_test(input_path, output_path, mx, my, s_ratio, seed, use_tru
 
     s_ratio_str = str_encode_value(s_ratio)
 
-    train_set_size = len(h5py.File(input_path, 'r')[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_train"][:])
-    val_set_size = len(h5py.File(input_path, 'r')[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_val"][:])
-    
+    train_set_size = len(
+        h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_train"][:]
+    )
+    val_set_size = len(
+        h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_val"][:]
+    )
+
     if use_true_mu:
-        data_all_df = h5py.File(input_path, 'r')[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_test"][:train_set_size-val_set_size]
+        data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
+            "x_test"
+        ][: train_set_size - val_set_size]
     else:
-        data_all_df = h5py.File(input_path, 'r')[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_test"][:]
+        data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
+            "x_test"
+        ][:]
     # shape is (N, 14) where N is the number of events, the columns orders are
     # pt_j1, eta_j1, phi_j1, mj1, Nj1, tau12j1, tau23j1, pt_j2, eta_j2, phi_j2, mj2, Nj2, tau12j2, tau23j2
     # all units are in TeV already
@@ -91,16 +106,17 @@ def process_signals_test(input_path, output_path, mx, my, s_ratio, seed, use_tru
     mj1mj2 = np.stack([mj1, mj2], axis=1)
     mjmin = mj1mj2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     mjmax = mj1mj2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
-    
+
     # get tau21j1, tau21j2 and sort by mj1 mj2 in the same way
     tau21j1j2 = np.stack([tau21j1, tau21j2], axis=1)
     tau21min = tau21j1j2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     tau21max = tau21j1j2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
 
-    output = np.stack([mjj, mjmin, mjmax-mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1)
+    output = np.stack(
+        [mjj, mjmin, mjmax - mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1
+    )
 
     np.save(output_path, output)
-
 
     # target_process_df = data_all_df.query(f"mx=={mx} & my=={my}")
 
