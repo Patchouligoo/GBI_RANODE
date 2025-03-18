@@ -34,9 +34,9 @@ class RNodeTemplate(
 
     device = luigi.Parameter(default="cuda:0")
     batchsize = luigi.IntParameter(default=2048)
-    epoches = luigi.IntParameter(default=100)
+    epoches = luigi.IntParameter(default=200)
     w_value = luigi.FloatParameter(default=0.05)
-    num_model_to_save = luigi.IntParameter(default=10)
+    early_stopping_patience = luigi.IntParameter(default=10)
 
     def store_parts(self):
         w_value = str(self.w_value)
@@ -58,10 +58,7 @@ class RNodeTemplate(
 
     def output(self):
         return {
-            "sig_models": [
-                self.local_target(f"model_S_{i}.pt")
-                for i in range(self.num_model_to_save)
-            ],
+            "sig_model": self.local_target(f"model_S.pt"),
             "trainloss_list": self.local_target("trainloss_list.npy"),
             "valloss_list": self.local_target("valloss_list.npy"),
             "metadata": self.local_target("metadata.json"),
@@ -104,7 +101,7 @@ class RNodeTemplate(
             self.w_value,
             self.batchsize,
             self.epoches,
-            self.num_model_to_save,
+            self.early_stopping_patience,
             self.train_random_seed,
             self.device,
         )

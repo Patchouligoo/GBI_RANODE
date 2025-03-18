@@ -17,8 +17,8 @@ def train_model_S(
     s_ratio,
     w_value,
     batch_size,
-    epoches=100,
-    num_model_to_save=10,
+    epoches=200,
+    early_stopping_patience=10,
     train_random_seed=42,
     device="cuda",
 ):
@@ -100,7 +100,8 @@ def train_model_S(
 
     trainloss_list = []
     valloss_list = []
-    model_list = []
+    min_val_loss = np.inf
+    patience = 0
 
     # define training
     for epoch in range(epoches):
@@ -127,7 +128,17 @@ def train_model_S(
         state_dict = copy.deepcopy(
             {k: v.cpu() for k, v in model_S.state_dict().items()}
         )
-        model_list.append(state_dict)
+
+        # early stopping
+        if val_loss < min_val_loss:
+            min_val_loss = val_loss
+            patience = 0
+            best_model = state_dict
+        else:
+            patience += 1
+            if patience > early_stopping_patience:
+                print("early stopping at epoch: ", epoch)
+                break
 
         trainloss_list.append(train_loss)
         valloss_list.append(val_loss)
@@ -143,12 +154,8 @@ def train_model_S(
     np.save(output_dir["valloss_list"].path, valloss_list)
 
     # save best models with lowest val loss
-    best_models = np.argsort(valloss_list)[:num_model_to_save]
-    for i in range(num_model_to_save):
-        print(
-            f"best model {i}: {best_models[i]}, valloss: {valloss_list[best_models[i]]}"
-        )
-        torch.save(model_list[best_models[i]], output_dir["sig_models"][i].path)
+    print("best model val loss: ", min_val_loss)
+    torch.save(best_model, output_dir["sig_model"].path)
 
     # save metadata
     metadata = {
@@ -156,8 +163,8 @@ def train_model_S(
         "num_train_events": traintensor_S.shape[0],
         "num_val_events": valtensor_S.shape[0],
     }
-    metadata["min_val_loss_list"] = valloss_list[best_models]
-    metadata["min_train_loss_list"] = trainloss_list[best_models]
+    metadata["min_val_loss_list"] = [min_val_loss]
+    metadata["min_train_loss_list"] = [trainloss_list.min()]
 
     with open(output_dir["metadata"].path, "w") as f:
         json.dump(metadata, f, cls=NumpyEncoder)
