@@ -14,9 +14,9 @@ def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
 
     s_ratio_str = str_encode_value(s_ratio)
 
-    data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
-        type
-    ][:]
+    data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"]
+    data_all_df = data_all_df[f"ensemble_{seed}"][s_ratio_str][type][:]
+
     # shape is (N, 14) where N is the number of events, the columns orders are
     # pt_j1, eta_j1, phi_j1, mj1, Nj1, tau12j1, tau23j1, pt_j2, eta_j2, phi_j2, mj2, Nj2, tau12j2, tau23j2
     # all units are in TeV already
@@ -66,21 +66,12 @@ def process_signals_test(
 
     s_ratio_str = str_encode_value(s_ratio)
 
-    train_set_size = len(
-        h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_train"][:]
-    )
-    val_set_size = len(
-        h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)]["x_val"][:]
-    )
-
     if use_true_mu:
-        data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
-            "x_test"
-        ][: train_set_size - val_set_size]
+        data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"]
+        data_all_df = data_all_df[f"ensemble_{seed}"][s_ratio_str]["x_test"][:]
     else:
-        data_all_df = h5py.File(input_path, "r")[f"{mx}_{my}"][s_ratio_str][str(seed)][
-            "x_test"
-        ][:]
+        raise NotImplementedError("using all events for testing is not implemented yet")
+
     # shape is (N, 14) where N is the number of events, the columns orders are
     # pt_j1, eta_j1, phi_j1, mj1, Nj1, tau12j1, tau23j1, pt_j2, eta_j2, phi_j2, mj2, Nj2, tau12j2, tau23j2
     # all units are in TeV already
