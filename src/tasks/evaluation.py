@@ -68,19 +68,22 @@ class ScanOverTrueMu(
     BaseTask,
 ):
 
-    scan_index = luigi.ListParameter(default=[0, 3, 5, 6, 7])
+    scan_index = luigi.ListParameter(
+        default=[
+            0,  # 0
+            5,  # 0.10%
+            7,  # 0.30%
+            8,  # 0.53%
+            9,  # 0.93%
+            11,  # 2.85%
+            12,  # 5.01%
+        ]
+    )
 
     def requires(self):
-        # return [
-        #     FittingScanResults.req(self, s_ratio_index=index)
-        #     for index in self.scan_index
-        # ]
         return [
-            FittingScanResults.req(self, s_ratio_index=0),
-            FittingScanResults.req(self, s_ratio_index=3),
-            FittingScanResults.req(self, s_ratio_index=5),
-            FittingScanResults.req(self, s_ratio_index=6, w_min=0.0001),
-            FittingScanResults.req(self, s_ratio_index=7),
+            FittingScanResults.req(self, s_ratio_index=index)
+            for index in self.scan_index
         ]
 
     def output(self):

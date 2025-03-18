@@ -161,8 +161,8 @@ class TranvalSplitUncertaintyMixin:
 
 class WScanMixin:
 
-    w_min = luigi.FloatParameter(default=0.00001)
-    w_max = luigi.FloatParameter(default=0.05)
+    w_min = luigi.FloatParameter(default=1e-5)
+    w_max = luigi.FloatParameter(default=0.1)
     scan_number = luigi.IntParameter(default=20)
 
     def store_parts(self):
