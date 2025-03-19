@@ -170,8 +170,7 @@ class CoarseScanRANODEFixedSplitSeed(
 
                 # save model paths
                 model_path_list_i = [
-                    model_i.path
-                    for model_i in self.input()[f"model_{index_w}"][i]["sig_models"]
+                    self.input()[f"model_{index_w}"][i]["sig_model"].path
                 ]
                 model_path_list.extend(model_path_list_i)
 
