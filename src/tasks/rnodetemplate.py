@@ -241,7 +241,7 @@ class CoarseScanRANODEoverW(
         model_scan_dict = {
             f"scan_index_{index}": [] for index in range(self.scan_number)
         }
-        for index in range(self.train_num_sig_templates):
+        for index in range(1, self.train_num_sig_templates + 1):
             with open(
                 self.input()["model_S_scan_result"][f"trainval_seed_{index}"][
                     "model_list"

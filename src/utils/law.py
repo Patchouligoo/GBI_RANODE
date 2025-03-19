@@ -110,7 +110,7 @@ class TranvalSplitRandomMixin:
 class TestSetMixin:
 
     use_true_mu = luigi.BoolParameter(default=True)
-    test_set_fold = luigi.IntParameter(default=0)
+    test_set_fold = luigi.IntParameter(default=1)
 
     def store_parts(self):
         return super().store_parts() + (
