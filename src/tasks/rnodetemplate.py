@@ -232,7 +232,6 @@ class CoarseScanRANODEoverW(
         return {
             "prob_S_scan": self.local_target("prob_S_scan.npy"),
             "prob_B_scan": self.local_target("prob_B_scan.npy"),
-            # "truth_label": self.local_target("truth_label.npy"),
         }
 
     @law.decorator.safe_output
@@ -286,7 +285,6 @@ class CoarseScanRANODEoverW(
         self.output()["prob_S_scan"].parent.touch()
         np.save(self.output()["prob_S_scan"].path, prob_S_list)
         np.save(self.output()["prob_B_scan"].path, prob_B_list)
-        np.save(self.output()["truth_label"].path, truth_label)
 
 
 # class FineScanRANOD(
