@@ -72,7 +72,7 @@ class ProcessSignalTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTas
     @law.decorator.safe_output
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
-        data_path = f"{data_dir}/old_signal_features_W_qq.h5"
+        data_path = f"{data_dir}/hopefully_really_final_signal_features_W_qq.h5"
 
         from src.data_prep.signal_processing import process_signals_test
 
