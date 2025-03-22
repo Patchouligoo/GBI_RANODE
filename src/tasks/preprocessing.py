@@ -55,7 +55,7 @@ class ProcessSignal(FoldSplitRandomMixin, SignalStrengthMixin, ProcessMixin, Bas
             self.mx,
             self.my,
             self.s_ratio,
-            self.fold_split_seed
+            self.fold_split_seed,
             type="x_val",
         )
         process_signals(
