@@ -9,22 +9,22 @@ import json
 from src.utils.law import (
     BaseTask,
     SignalStrengthMixin,
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     TemplateRandomMixin,
-    TranvalSplitUncertaintyMixin,
     SigTemplateTrainingUncertaintyMixin,
     ProcessMixin,
-    TestSetMixin,
     WScanMixin,
     BkgModelMixin,
 )
-from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
-from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
+from src.tasks.preprocessing import PreprocessingFold
+from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
 
 
 class RNodeTemplate(
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     TemplateRandomMixin,
     BkgModelMixin,
     SignalStrengthMixin,
@@ -44,16 +44,8 @@ class RNodeTemplate(
 
     def requires(self):
         return {
-            "preprocessed_data": PreprocessingTrainval.req(
-                self,
-                trainval_split_seed=self.trainval_split_seed,
-                s_ratio_index=self.s_ratio_index,
-            ),
-            "bkgprob": PredictBkgProbTrainVal.req(
-                self,
-                trainval_split_seed=self.trainval_split_seed,
-                s_ratio_index=self.s_ratio_index,
-            ),
+            "preprocessed_data": PreprocessingFold.req(self),
+            "bkgprob": PredictBkgProb.req(self),
         }
 
     def output(self):
@@ -90,7 +82,7 @@ class RNodeTemplate(
         }
 
         print(
-            f"train model S with train random seed {self.train_random_seed}, sample random seed {self.trainval_split_seed}, s_ratio {self.s_ratio}"
+            f"train model S with train random seed {self.train_random_seed}, sample random seed {self.fold_split_seed}, s_ratio {self.s_ratio}"
         )
         from src.models.train_model_S import train_model_S
 
@@ -109,7 +101,8 @@ class RNodeTemplate(
 
 class CoarseScanRANODEFixedSplitSeed(
     SigTemplateTrainingUncertaintyMixin,
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     WScanMixin,
     BkgModelMixin,
     SignalStrengthMixin,
@@ -129,7 +122,6 @@ class CoarseScanRANODEFixedSplitSeed(
                 RNodeTemplate.req(
                     self,
                     w_value=w_range[index],
-                    trainval_split_seed=self.trainval_split_seed,
                     train_random_seed=i,
                 )
                 for i in range(self.train_num_sig_templates)
