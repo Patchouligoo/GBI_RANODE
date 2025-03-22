@@ -75,15 +75,14 @@ class ProcessBkg(BaseTask):
     The columns are:
     (mjj, mj1, delta_mj=mj2-mj1, tau21j1=tau2j1/tau1j1, tau21j2=tau2j2/tau1j2, label=0)
 
-    Bkg events will first be splitted into SR and CR, then SR will be splitted into trainval set and test set
+    Bkg events will first be splitted into SR and CR
     The overall CR will be used to calculate the normalizing parameters, then it will be applied on CR events
     Then CR events will be splitted into train and val set
     """
 
     def output(self):
         return {
-            "SR_trainval": self.local_target("reprocessed_bkgs_trainval.npy"),
-            "SR_test": self.local_target("reprocessed_bkgs_test.npy"),
+            "SR_bkg": self.local_target("reprocessed_bkgs_sr.npy"),
             "CR_train": self.local_target("reprocessed_bkgs_cr_train.npy"),
             "CR_val": self.local_target("reprocessed_bkgs_cr_val.npy"),
             "pre_parameters": self.local_target("pre_parameters.json"),
@@ -109,16 +108,14 @@ class ProcessBkg(BaseTask):
         # split into trainval and test set
         from src.data_prep.data_prep import background_split
 
-        SR_bkg_trainval, SR_bkg_test, CR_bkg = background_split(
+        SR_bkg, CR_bkg = background_split(
             output_combined,
-            bkg_num_in_sr_data=self.bkg_num_in_sr_data,
             resample_seed=42,
         )
 
         # save SR data
-        self.output()["SR_trainval"].parent.touch()
-        np.save(self.output()["SR_trainval"].path, SR_bkg_trainval)
-        np.save(self.output()["SR_test"].path, SR_bkg_test)
+        self.output()["SR_bkg"].parent.touch()
+        np.save(self.output()["SR_bkg"].path, SR_bkg)
 
         from src.data_prep.utils import (
             logit_transform,
