@@ -12,7 +12,7 @@ def separate_SB_SR(data):
     return data[innermask], data[outermask]
 
 
-def background_split(background, bkg_num_in_sr_data=-1, resample_seed = 42):
+def background_split(background, resample_seed=42):
 
     # shuffle data
     background = shuffle(background, random_state=resample_seed)
@@ -20,18 +20,10 @@ def background_split(background, bkg_num_in_sr_data=-1, resample_seed = 42):
     # split bkg into SR and CR
     SR_bkg, CR_bkg = separate_SB_SR(background)
 
-    if bkg_num_in_sr_data != -1:
-        # this includes 50% for training and 25%, 25% for val and test
-        SR_bkg = SR_bkg[:bkg_num_in_sr_data]
-    
-    # split into trainval and test set
-    SR_bkg_trainval, SR_bkg_test = train_test_split(SR_bkg, test_size=0.25, random_state=resample_seed)
-    
-    print('SR bkg trainval shape: ', SR_bkg_trainval.shape)
-    print('SR bkg test shape: ', SR_bkg_test.shape)
+    print("SR bkg shape: ", SR_bkg.shape)
     print("CR bkg shape: ", CR_bkg.shape)
 
-    return SR_bkg_trainval, SR_bkg_test, CR_bkg
+    return SR_bkg, CR_bkg
 
 
 # def resample_split_test(signal_path, bkg_path, resample_seed = 42):
