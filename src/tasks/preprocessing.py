@@ -15,6 +15,7 @@ from src.utils.law import (
     SignalStrengthMixin,
     ProcessMixin,
     FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
 )
 
 
@@ -141,11 +142,15 @@ class ProcessBkg(BaseTask):
         np.save(self.output()["CR_val"].path, CR_bkg_val)
 
 
-class PreprocessingTrainval(
-    TranvalSplitRandomMixin, SignalStrengthMixin, ProcessMixin, BaseTask
+class PreprocessingFold(
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
 ):
     """
-    This task will take signal train val set with a given signal strength and train val set split index
+    This task will take signal train val test set with a given signal strength and fold split index
     It also takes SR bkg trainval set, using the same train val split index as seed to split the SR bkg
     into train and val set
 
@@ -157,9 +162,7 @@ class PreprocessingTrainval(
 
         if self.s_ratio != 0:
             return {
-                "signal": ProcessSignalTrainVal.req(
-                    self, trainval_split_seed=self.trainval_split_seed
-                ),
+                "signal": ProcessSignal.req(self),
                 "bkg": ProcessBkg.req(self),
             }
         else:
@@ -173,10 +176,12 @@ class PreprocessingTrainval(
                 "data_SR_data_train_model_S.npy"
             ),
             "SR_data_val_model_S": self.local_target("data_SR_data_val_model_S.npy"),
+            "SR_data_test_model_S": self.local_target("data_SR_data_test_model_S.npy"),
             "SR_data_train_model_B": self.local_target(
                 "data_SR_data_train_model_B.npy"
             ),
             "SR_data_val_model_B": self.local_target("data_SR_data_val_model_B.npy"),
+            "SR_data_test_model_B": self.local_target("data_SR_data_test_model_B.npy"),
             "SR_mass_hist": self.local_target("SR_mass_hist.json"),
         }
 
@@ -193,7 +198,8 @@ class PreprocessingTrainval(
         if self.s_ratio != 0:
             SR_signal_train = np.load(self.input()["signal"]["train"].path)
             SR_signal_val = np.load(self.input()["signal"]["val"].path)
-        SR_bkg_trainval = np.load(self.input()["bkg"]["SR_trainval"].path)
+            SR_signal_test = np.load(self.input()["signal"]["test"].path)
+        SR_bkg = np.load(self.input()["bkg"]["SR_bkg"].path)
 
         pre_parameters = json.load(
             open(self.input()["bkg"]["pre_parameters"].path, "r")
@@ -204,7 +210,7 @@ class PreprocessingTrainval(
         # ----------------------- mass hist in SR -----------------------
         from config.configs import SR_MIN, SR_MAX
 
-        mass = SR_bkg_trainval[SR_bkg_trainval[:, -1] == 0, 0]
+        mass = SR_bkg[SR_bkg[:, -1] == 0, 0]
         bins = np.linspace(SR_MIN, SR_MAX, 50)
         hist_back = np.histogram(mass, bins=bins, density=True)
         # save mass histogram and bins
@@ -213,19 +219,49 @@ class PreprocessingTrainval(
             json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
 
         # ----------------------- make SR data -----------------------
-        SR_bkg_train, SR_bkg_val = train_test_split(
-            SR_bkg_trainval, test_size=1 / 3, random_state=self.trainval_split_seed
-        )
+        # split the SR bkg into fold_split_num folds, then pick the fold_split_seed-th -1 fold as test set
+        # -1 since fold_split_seed starts from 1
+        # the fold_split_seed-2-th fold as val set, and the rest as train set
+        # SR bkg has been shuffled in the ProcessBkg task
+        assert (self.fold_split_seed <= self.fold_split_num) and (
+            self.fold_split_seed > 0
+        ), "fold_split_seed cannot be larger than fold_split_num, and must be larger than 0"
 
+        SR_bkg_folds = {}
+        for fold in range(self.fold_split_num):
+            SR_bkg_folds[fold] = SR_bkg[
+                fold
+                * int(len(SR_bkg) / self.fold_split_num) : (fold + 1)
+                * int(len(SR_bkg) / self.fold_split_num)
+            ]
+
+        # get the SR bkg train val test set
+        SR_bkg_test_index = self.fold_split_seed - 1
+        SR_bkg_val_index = (self.fold_split_seed - 2) % self.fold_split_num
+        SR_bkg_train_index_list = [
+            fold
+            for fold in range(self.fold_split_num)
+            if fold not in [SR_bkg_test_index, SR_bkg_val_index]
+        ]
+        SR_bkg_train = np.concatenate(
+            [SR_bkg_folds[fold] for fold in SR_bkg_train_index_list], axis=0
+        )
+        SR_bkg_val = SR_bkg_folds[SR_bkg_val_index]
+        SR_bkg_test = SR_bkg_folds[SR_bkg_test_index]
+
+        # concatenate signal and bkg
         if self.s_ratio != 0:
             SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
             SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
+            SR_data_test = np.concatenate([SR_signal_test, SR_bkg_test], axis=0)
         else:
             SR_data_train = SR_bkg_train
             SR_data_val = SR_bkg_val
+            SR_data_test = SR_bkg_test
 
-        SR_data_train = shuffle(SR_data_train, random_state=self.trainval_split_seed)
-        SR_data_val = shuffle(SR_data_val, random_state=self.trainval_split_seed)
+        SR_data_train = shuffle(SR_data_train, random_state=self.fold_split_seed)
+        SR_data_val = shuffle(SR_data_val, random_state=self.fold_split_seed)
+        SR_data_test = shuffle(SR_data_test, random_state=self.fold_split_seed)
 
         # SR_data_trainval
         _, mask = logit_transform(
@@ -242,90 +278,7 @@ class PreprocessingTrainval(
         SR_data_val = SR_data_val[mask]
         SR_data_val = preprocess_params_transform(SR_data_val, pre_parameters)
 
-        # For signal model, we shift the mass by -3.5 following RANODE workflow
-        # copy one set for signal model
-        SR_data_train_model_S = SR_data_train.copy()
-        SR_data_val_model_S = SR_data_val.copy()
-        # shift mass by -3.5 for signals
-        SR_data_train_model_S[:, 0] -= 3.5
-        SR_data_val_model_S[:, 0] -= 3.5
-
-        np.save(self.output()["SR_data_train_model_S"].path, SR_data_train_model_S)
-        np.save(self.output()["SR_data_val_model_S"].path, SR_data_val_model_S)
-
-        # copy another set for background model
-        SR_data_train_model_B = SR_data_train.copy()
-        SR_data_val_model_B = SR_data_val.copy()
-
-        np.save(self.output()["SR_data_train_model_B"].path, SR_data_train_model_B)
-        np.save(self.output()["SR_data_val_model_B"].path, SR_data_val_model_B)
-
-
-class PreprocessingTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTask):
-    """
-    This task will take signal test set with a given signal strength and test set fold index
-    """
-
-    def requires(self):
-        if self.s_ratio != 0:
-            return {
-                "signal": ProcessSignalTest.req(
-                    self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
-                ),
-                "bkg": ProcessBkg.req(self),
-            }
-        else:
-            return {
-                "bkg": ProcessBkg.req(self),
-            }
-
-    def output(self):
-        return {
-            "SR_data_test_model_S": self.local_target("data_SR_data_test_model_S.npy"),
-            "SR_data_test_model_B": self.local_target("data_SR_data_test_model_B.npy"),
-            "SR_mass_hist": self.local_target("SR_mass_hist.json"),
-        }
-
-    @law.decorator.safe_output
-    def run(self):
-        from src.data_prep.utils import (
-            logit_transform,
-            preprocess_params_transform,
-            preprocess_params_fit,
-        )
-
-        # SR mass hist will be the same as Trainval task
-        SR_bkg_trainval = np.load(self.input()["bkg"]["SR_trainval"].path)
-        # ----------------------- mass hist in SR -----------------------
-        from config.configs import SR_MIN, SR_MAX
-
-        mass = SR_bkg_trainval[SR_bkg_trainval[:, -1] == 0, 0]
-        bins = np.linspace(SR_MIN, SR_MAX, 50)
-        hist_back = np.histogram(mass, bins=bins, density=True)
-        # save mass histogram and bins
-        self.output()["SR_mass_hist"].parent.touch()
-        with open(self.output()["SR_mass_hist"].path, "w") as f:
-            json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
-
-        # preprocessing parameters
-        pre_parameters = json.load(
-            open(self.input()["bkg"]["pre_parameters"].path, "r")
-        )
-        for key in pre_parameters.keys():
-            pre_parameters[key] = np.array(pre_parameters[key])
-
-        # load data
-        if self.s_ratio != 0:
-            SR_signal_test = np.load(self.input()["signal"]["test"].path)
-        SR_bkg_test = np.load(self.input()["bkg"]["SR_test"].path)
-
-        if self.s_ratio != 0:
-            SR_data_test = np.concatenate([SR_signal_test, SR_bkg_test], axis=0)
-        else:
-            SR_data_test = SR_bkg_test
-
-        SR_data_test = shuffle(SR_data_test, random_state=42)
-
+        # test data
         _, mask = logit_transform(
             SR_data_test[:, 1:-1], pre_parameters["min"], pre_parameters["max"]
         )
@@ -334,11 +287,60 @@ class PreprocessingTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTas
 
         # For signal model, we shift the mass by -3.5 following RANODE workflow
         # copy one set for signal model
+        SR_data_train_model_S = SR_data_train.copy()
+        SR_data_val_model_S = SR_data_val.copy()
         SR_data_test_model_S = SR_data_test.copy()
         # shift mass by -3.5 for signals
+        SR_data_train_model_S[:, 0] -= 3.5
+        SR_data_val_model_S[:, 0] -= 3.5
         SR_data_test_model_S[:, 0] -= 3.5
+
+        np.save(self.output()["SR_data_train_model_S"].path, SR_data_train_model_S)
+        np.save(self.output()["SR_data_val_model_S"].path, SR_data_val_model_S)
         np.save(self.output()["SR_data_test_model_S"].path, SR_data_test_model_S)
 
         # copy another set for background model
+        SR_data_train_model_B = SR_data_train.copy()
+        SR_data_val_model_B = SR_data_val.copy()
         SR_data_test_model_B = SR_data_test.copy()
+
+        np.save(self.output()["SR_data_train_model_B"].path, SR_data_train_model_B)
+        np.save(self.output()["SR_data_val_model_B"].path, SR_data_val_model_B)
         np.save(self.output()["SR_data_test_model_B"].path, SR_data_test_model_B)
+
+        # print out some info
+        train_sig_num = SR_data_train_model_B[:, -1].sum()
+        train_bkg_num = (SR_data_train_model_B[:, -1] == 0).sum()
+        train_mu = train_sig_num / (train_sig_num + train_bkg_num)
+        val_sig_num = SR_data_val_model_B[:, -1].sum()
+        val_bkg_num = (SR_data_val_model_B[:, -1] == 0).sum()
+        val_mu = val_sig_num / (val_sig_num + val_bkg_num)
+        test_sig_num = SR_data_test_model_B[:, -1].sum()
+        test_bkg_num = (SR_data_test_model_B[:, -1] == 0).sum()
+        test_mu = test_sig_num / (test_sig_num + test_bkg_num)
+        print("Fold splitting index is: ", self.fold_split_seed)
+        print("true mu: ", self.s_ratio)
+        print(
+            "train mu: ",
+            train_mu,
+            "train sig num: ",
+            train_sig_num,
+            "train bkg num: ",
+            train_bkg_num,
+        )
+        print(
+            "val mu: ",
+            val_mu,
+            "val sig num: ",
+            val_sig_num,
+            "val bkg num: ",
+            val_bkg_num,
+        )
+        print(
+            "test mu: ",
+            test_mu,
+            "test sig num: ",
+            test_sig_num,
+            "test bkg num: ",
+            test_bkg_num,
+        )

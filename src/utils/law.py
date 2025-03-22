@@ -97,7 +97,7 @@ class FoldSplitRandomMixin:
 class FoldSplitUncertaintyMixin:
 
     # controls how many times we split the data for uncertainty estimation
-    fold_split_num = luigi.IntParameter(default=10)
+    fold_split_num = luigi.IntParameter(default=4)
 
     def store_parts(self):
         return super().store_parts() + (f"fold_split_num_{self.fold_split_num}",)
