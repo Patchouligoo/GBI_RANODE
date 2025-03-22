@@ -7,6 +7,7 @@ import copy
 import numpy as np
 import pandas as pd
 from scipy.stats import rv_histogram
+from sklearn.model_selection import train_test_split
 import pickle
 import torch
 
@@ -16,11 +17,11 @@ from src.utils.law import (
     TemplateRandomMixin,
     BkgTemplateUncertaintyMixin,
     BkgModelMixin,
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     ProcessMixin,
-    TestSetMixin,
 )
-from src.tasks.preprocessing import PreprocessingTrainval, ProcessBkg, PreprocessingTest
+from src.tasks.preprocessing import PreprocessingFold, ProcessBkg
 
 
 class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
@@ -249,9 +250,7 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
     early_stopping_patience = luigi.IntParameter(default=20)
 
     def requires(self):
-        return PreprocessingTrainval.req(
-            self, s_ratio_index=0, trainval_split_seed=self.train_random_seed
-        )
+        return PreprocessingFold.req(self, s_ratio_index=0)
 
     def output(self):
         return {
@@ -273,8 +272,19 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
         # load bkg in SR but no label
         data_train_SR = np.load(self.input()["SR_data_train_model_B"].path)
         data_val_SR = np.load(self.input()["SR_data_val_model_B"].path)
+        data_test_SR = np.load(self.input()["SR_data_test_model_B"].path)
         assert data_train_SR[:, -1].sum() == 0, "data_train_SR should have no signal"
         assert data_val_SR[:, -1].sum() == 0, "data_val_SR should have no signal"
+        assert data_test_SR[:, -1].sum() == 0, "data_test_SR should have no signal"
+
+        # combine all data and resplit into train and val
+        data_all = np.concatenate([data_train_SR, data_val_SR, data_test_SR], axis=0)
+        data_train_SR, data_val_SR = train_test_split(
+            data_all, test_size=0.2, random_state=self.train_random_seed
+        )
+
+        print("train with ", len(data_train_SR), " samples")
+        print("val with ", len(data_val_SR), " samples")
 
         traintensor = torch.from_numpy(data_train_SR.astype("float32")).to(self.device)
         valtensor = torch.from_numpy(data_val_SR.astype("float32")).to(self.device)
@@ -352,10 +362,11 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
         torch.save(best_model, self.output()["bkg_model"].path)
 
 
-class PredictBkgProbTrainVal(
+class PredictBkgProb(
     BkgTemplateUncertaintyMixin,
     BkgModelMixin,
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
@@ -371,9 +382,7 @@ class PredictBkgProbTrainVal(
                     PerfectBkgTemplateTraining.req(self, train_random_seed=i)
                     for i in range(self.num_bkg_templates)
                 ],
-                "preprocessed_data": PreprocessingTrainval.req(
-                    self, trainval_split_seed=self.trainval_split_seed
-                ),
+                "preprocessed_data": PreprocessingFold.req(self),
             }
         else:
             return {
@@ -381,15 +390,14 @@ class PredictBkgProbTrainVal(
                     BkgTemplateTraining.req(self, train_random_seed=i)
                     for i in range(self.num_bkg_templates)
                 ],
-                "preprocessed_data": PreprocessingTrainval.req(
-                    self, trainval_split_seed=self.trainval_split_seed
-                ),
+                "preprocessed_data": PreprocessingFold.req(self),
             }
 
     def output(self):
         return {
             "log_B_train": self.local_target("log_B_train.npy"),
             "log_B_val": self.local_target("log_B_val.npy"),
+            "log_B_test": self.local_target("log_B_test.npy"),
         }
 
     @law.decorator.safe_output
@@ -424,9 +432,17 @@ class PredictBkgProbTrainVal(
             self.device
         )
 
+        data_test_SR_B = np.load(
+            self.input()["preprocessed_data"]["SR_data_test_model_B"].path
+        )
+        testtensor_SR_B = torch.from_numpy(data_test_SR_B.astype("float32")).to(
+            self.device
+        )
+
         # get avg probility of 10 models
         log_B_train_list = []
         log_B_val_list = []
+        log_B_test_list = []
         for model_B in model_Bs:
             with torch.no_grad():
                 log_B_train = model_B.model.log_probs(
@@ -445,6 +461,15 @@ class PredictBkgProbTrainVal(
                 log_B_val[torch.isnan(log_B_val)] = 0
                 log_B_val_list.append(log_B_val.cpu().numpy())
 
+                log_B_test = model_B.model.log_probs(
+                    inputs=testtensor_SR_B[:, 1:-1],
+                    cond_inputs=testtensor_SR_B[:, 0].reshape(-1, 1),
+                )
+                # set all nans to 0
+                log_B_test[torch.isnan(log_B_test)] = 0
+                log_B_test_list.append
+                log_B_test_list.append(log_B_test.cpu().numpy())
+
         log_B_train = np.array(log_B_train_list)
         B_train = np.exp(log_B_train).mean(axis=0)
         log_B_train = np.log(B_train + 1e-32)
@@ -453,88 +478,11 @@ class PredictBkgProbTrainVal(
         B_val = np.exp(log_B_val).mean(axis=0)
         log_B_val = np.log(B_val + 1e-32)
 
+        log_B_test = np.array(log_B_test_list)
+        B_test = np.exp(log_B_test).mean(axis=0)
+        log_B_test = np.log(B_test + 1e-32)
+
         self.output()["log_B_train"].parent.touch()
         np.save(self.output()["log_B_train"].path, log_B_train)
         np.save(self.output()["log_B_val"].path, log_B_val)
-
-
-class PredictBkgProbTest(
-    BkgTemplateUncertaintyMixin,
-    BkgModelMixin,
-    TestSetMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
-):
-
-    device = luigi.Parameter(default="cuda")
-
-    def requires(self):
-
-        if self.use_perfect_bkg_model:
-            return {
-                "bkg_models": [
-                    PerfectBkgTemplateTraining.req(self, train_random_seed=i)
-                    for i in range(self.num_bkg_templates)
-                ],
-                "preprocessed_test_data": PreprocessingTest.req(
-                    self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
-                ),
-            }
-        else:
-            return {
-                "bkg_models": [
-                    BkgTemplateTraining.req(self, train_random_seed=i)
-                    for i in range(self.num_bkg_templates)
-                ],
-                "preprocessed_test_data": PreprocessingTest.req(
-                    self, test_set_fold=self.test_set_fold, use_true_mu=self.use_true_mu
-                ),
-            }
-
-    def output(self):
-        return {
-            "log_B_test": self.local_target("log_B_test.npy"),
-        }
-
-    @law.decorator.safe_output
-    def run(self):
-        # load the models
-        from src.models.model_B import DensityEstimator, anode
-
-        config_file = os.path.join("src", "models", "DE_MAF_model.yml")
-
-        model_Bs = []
-
-        for i in range(self.num_bkg_templates):
-            model_B = DensityEstimator(config_file, eval_mode=True, device="cuda")
-            best_model_dir = self.input()["bkg_models"][i]["bkg_model"].path
-            model_B.model.load_state_dict(torch.load(best_model_dir))
-            model_B.model.to("cuda")
-            model_B.model.eval()
-            model_Bs.append(model_B)
-
-        # load the sample to compare with
-        data_test_SR_B = np.load(
-            self.input()["preprocessed_test_data"]["SR_data_test_model_B"].path
-        )
-        testtensor_SR_B = torch.from_numpy(data_test_SR_B.astype("float32")).to(
-            self.device
-        )
-
-        # get avg probility of 10 models
-        log_B_test_list = []
-        for model_B in model_Bs:
-            with torch.no_grad():
-                log_B_test = model_B.model.log_probs(
-                    inputs=testtensor_SR_B[:, 1:-1],
-                    cond_inputs=testtensor_SR_B[:, 0].reshape(-1, 1),
-                )
-                # set all nans to 0
-                log_B_test[torch.isnan(log_B_test)] = 0
-                log_B_test_list.append(log_B_test.cpu().numpy())
-
-        log_B_test = np.array(log_B_test_list)
-
-        self.output()["log_B_test"].parent.touch()
         np.save(self.output()["log_B_test"].path, log_B_test)
