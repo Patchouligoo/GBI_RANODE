@@ -15,7 +15,6 @@ from src.utils.law import (
     SignalStrengthMixin,
     ProcessMixin,
     TranvalSplitRandomMixin,
-    BkginSRDataMixin,
     TestSetMixin,
 )
 
@@ -38,7 +37,7 @@ class ProcessSignalTrainVal(
     @law.decorator.safe_output
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
-        data_path = f"{data_dir}/hopefully_really_final_signal_features_W_qq.h5"
+        data_path = f"{data_dir}/hopefully_finally_final_signal_features_W_qq.h5"
 
         from src.data_prep.signal_processing import process_signals
 
@@ -72,7 +71,7 @@ class ProcessSignalTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTas
     @law.decorator.safe_output
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
-        data_path = f"{data_dir}/hopefully_really_final_signal_features_W_qq.h5"
+        data_path = f"{data_dir}/hopefully_finally_final_signal_features_W_qq.h5"
 
         from src.data_prep.signal_processing import process_signals_test
 
@@ -88,7 +87,7 @@ class ProcessSignalTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTas
         )
 
 
-class ProcessBkg(BkginSRDataMixin, BaseTask):
+class ProcessBkg(BaseTask):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
@@ -120,9 +119,10 @@ class ProcessBkg(BkginSRDataMixin, BaseTask):
         from src.data_prep.bkg_processing import process_bkgs
 
         output_qcd = process_bkgs(data_path_qcd)
-        output_extra_qcd = process_bkgs(data_path_extra_qcd)
+        # output_extra_qcd = process_bkgs(data_path_extra_qcd)
 
-        output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
+        # output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
+        output_combined = output_qcd
 
         # split into trainval and test set
         from src.data_prep.data_prep import background_split

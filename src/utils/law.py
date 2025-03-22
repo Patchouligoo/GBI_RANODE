@@ -47,17 +47,6 @@ class ProcessMixin:
         )
 
 
-class BkginSRDataMixin:
-    """
-    In order to compare with PAWS, we have to use the same number of bkgs
-    in SR to make our fake data. This variavle defines this number which is
-    num of bkgs in our data. 50% will go into training, 25% into validation and
-    25% into testing
-    """
-
-    bkg_num_in_sr_data = luigi.IntParameter(default=734210)
-
-
 class SignalStrengthMixin:
 
     # S/(S+B) ratio
