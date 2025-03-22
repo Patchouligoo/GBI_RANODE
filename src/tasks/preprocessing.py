@@ -14,14 +14,11 @@ from src.utils.law import (
     BaseTask,
     SignalStrengthMixin,
     ProcessMixin,
-    TranvalSplitRandomMixin,
-    TestSetMixin,
+    FoldSplitRandomMixin,
 )
 
 
-class ProcessSignalTrainVal(
-    TranvalSplitRandomMixin, SignalStrengthMixin, ProcessMixin, BaseTask
-):
+class ProcessSignal(FoldSplitRandomMixin, SignalStrengthMixin, ProcessMixin, BaseTask):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
@@ -32,6 +29,7 @@ class ProcessSignalTrainVal(
         return {
             "train": self.local_target("reprocessed_signals_train.npy"),
             "val": self.local_target("reprocessed_signals_val.npy"),
+            "test": self.local_target("reprocessed_signals_test.npy"),
         }
 
     @law.decorator.safe_output
@@ -48,7 +46,7 @@ class ProcessSignalTrainVal(
             self.mx,
             self.my,
             self.s_ratio,
-            self.trainval_split_seed,
+            self.fold_split_seed,
             type="x_train",
         )
         process_signals(
@@ -57,33 +55,17 @@ class ProcessSignalTrainVal(
             self.mx,
             self.my,
             self.s_ratio,
-            self.trainval_split_seed,
+            self.fold_split_seed
             type="x_val",
         )
-
-
-class ProcessSignalTest(TestSetMixin, SignalStrengthMixin, ProcessMixin, BaseTask):
-    def output(self):
-        return {
-            "test": self.local_target("reprocessed_signals_test.npy"),
-        }
-
-    @law.decorator.safe_output
-    def run(self):
-        data_dir = os.environ.get("DATA_DIR")
-        data_path = f"{data_dir}/hopefully_finally_final_signal_features_W_qq.h5"
-
-        from src.data_prep.signal_processing import process_signals_test
-
-        self.output()["test"].parent.touch()
-        process_signals_test(
+        process_signals(
             data_path,
             self.output()["test"].path,
             self.mx,
             self.my,
             self.s_ratio,
-            self.test_set_fold,
-            use_true_mu=self.use_true_mu,
+            self.fold_split_seed,
+            type="x_test",
         )
 
 
