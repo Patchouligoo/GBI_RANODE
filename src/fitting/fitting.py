@@ -130,17 +130,13 @@ def bootstrap_and_fit(
 ):
 
     # prob_S_list has shape (num_scan_points, num_models, num_events)
-    # prob_B_list has shape (num_scan_points, num_models, num_events)
+    # prob_B_list has shape (num_scan_points, num_events)
 
     event_num = prob_S_list.shape[-1]
 
-    # mu_scan_values = mu_scan_values[5:]
-    # prob_B_list = prob_B_list[5:]
-    # prob_S_list = prob_S_list[5:]
-
     # compute the nominal likelihood
     prob_S_nominal = prob_S_list.mean(axis=1)  # shape is (num_scan_points, num_events)
-    prob_B_nominal = prob_B_list.mean(axis=1)  # shape is (num_scan_points, num_events)
+    prob_B_nominal = prob_B_list  # shape is (num_scan_points, num_events)
     likelihood_nominal = (
         mu_scan_values.reshape(-1, 1) * prob_S_nominal
         + (1 - mu_scan_values.reshape(-1, 1)) * prob_B_nominal

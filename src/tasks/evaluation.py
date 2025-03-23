@@ -12,17 +12,16 @@ import matplotlib.ticker as mticker
 from src.utils.law import (
     BaseTask,
     SignalStrengthMixin,
-    TranvalSplitRandomMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
     TemplateRandomMixin,
-    TranvalSplitUncertaintyMixin,
     SigTemplateTrainingUncertaintyMixin,
     ProcessMixin,
-    TestSetMixin,
     BkgModelMixin,
     WScanMixin,
 )
-from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
-from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
+from src.tasks.preprocessing import PreprocessingFold
+from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
 from src.tasks.rnodetemplate import (
     CoarseScanRANODEoverW,

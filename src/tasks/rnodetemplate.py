@@ -196,9 +196,8 @@ class CoarseScanRANODEFixedSplitSeed(
 
 class CoarseScanRANODEoverW(
     SigTemplateTrainingUncertaintyMixin,
-    TranvalSplitUncertaintyMixin,
+    FoldSplitUncertaintyMixin,
     BkgModelMixin,
-    TestSetMixin,
     WScanMixin,
     SignalStrengthMixin,
     ProcessMixin,
@@ -207,17 +206,27 @@ class CoarseScanRANODEoverW(
 
     def requires(self):
 
-        trainval_seed_results = {}
+        model_results = {}
+        test_data_results = {}
+        test_bkgprob = {}
 
-        for index in range(1, self.split_num_sig_templates + 1):  # start from 1
-            trainval_seed_results[f"trainval_seed_{index}"] = (
-                CoarseScanRANODEFixedSplitSeed.req(self, trainval_split_seed=index)
+        for index in range(1, self.fold_split_num + 1):  # start from 1
+            model_results[f"model_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(
+                self, fold_split_seed=index
+            )
+            test_data_results[f"test_data_seed_{index}"] = PreprocessingFold.req(
+                self,
+                fold_split_seed=index,
+            )
+            test_bkgprob[f"bkgprob_test_seed_{index}"] = PredictBkgProb.req(
+                self,
+                fold_split_seed=index,
             )
 
         return {
-            "model_S_scan_result": trainval_seed_results,
-            "test_data": PreprocessingTest.req(self),
-            "bkgprob_test": PredictBkgProbTest.req(self),
+            "model_S_scan_result": model_results,
+            "data": test_data_results,
+            "bkgprob": test_bkgprob,
         }
 
     def output(self):
@@ -229,47 +238,58 @@ class CoarseScanRANODEoverW(
     @law.decorator.safe_output
     def run(self):
 
-        # load model list
-        model_scan_dict = {
-            f"scan_index_{index}": [] for index in range(self.scan_number)
-        }
-        for index in range(1, self.train_num_sig_templates + 1):
-            with open(
-                self.input()["model_S_scan_result"][f"trainval_seed_{index}"][
-                    "model_list"
-                ].path,
-                "r",
-            ) as f:
-                model_list = json.load(f)
-                for key, value in model_list.items():
-                    model_scan_dict[key].extend(value)
-
-        # load test data
-        test_data = self.input()["test_data"]
-        truth_label = np.load(test_data["SR_data_test_model_S"].path)[:, -1]
-
-        # load bkg prob
-        bkg_prob = self.input()["bkgprob_test"]["log_B_test"]
-        event_num = np.load(bkg_prob.path).shape[0]
-
         from src.models.ranode_pred import ranode_pred
 
         w_scan_list = np.logspace(
             np.log10(self.w_min), np.log10(self.w_max), self.scan_number
         )
-        prob_S_list = []
+
         prob_B_list = []
+        prob_S_list = []
 
+        # for each w test value
         for w_index in range(self.scan_number):
+
+            prob_S_list_w = None
+            prob_B_list_w = None
+
             w_value = w_scan_list[w_index]
+            print(f" - evaluating scan index {w_index}, w value {w_value}")
 
-            print(f"evaluating scan index {w_index}, w value {w_value}")
+            # for each fold, load the model, evaluate the model on test data, and save the prob_S
+            for index in range(1, self.fold_split_num + 1):
 
-            model_list = model_scan_dict[f"scan_index_{w_index}"]
-            prob_S, prob_B = ranode_pred(model_list, w_value, test_data, bkg_prob)
+                # data path
+                test_data_path = self.input()["data"][f"test_data_seed_{index}"]
 
-            prob_S_list.append(prob_S)
-            prob_B_list.append(prob_B)
+                # prob B path
+                bkg_prob_test_path = self.input()["bkgprob"][
+                    f"bkgprob_test_seed_{index}"
+                ]["log_B_test"]
+
+                # model list
+                model_list_path = self.input()["model_S_scan_result"][
+                    f"model_seed_{index}"
+                ]["model_list"].path
+
+                with open(model_list_path, "r") as f:
+                    model_scan_dict = json.load(f)
+
+                model_list = model_scan_dict[f"scan_index_{w_index}"]
+                prob_S, prob_B = ranode_pred(
+                    model_list, w_value, test_data_path, bkg_prob_test_path
+                )
+
+                # prob_S shape is (num_models, num_samples), prob_B shape is (num_samples,)
+                if prob_S_list_w is None:
+                    prob_S_list_w = prob_S
+                    prob_B_list_w = prob_B
+                else:
+                    prob_S_list_w = np.concatenate([prob_S_list_w, prob_S], axis=-1)
+                    prob_B_list_w = np.concatenate([prob_B_list_w, prob_B], axis=-1)
+
+            prob_S_list.append(prob_S_list_w)
+            prob_B_list.append(prob_B_list_w)
 
         prob_S_list = np.array(prob_S_list)
         prob_B_list = np.array(prob_B_list)
