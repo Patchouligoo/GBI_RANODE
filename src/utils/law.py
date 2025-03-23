@@ -15,12 +15,15 @@ class BaseTask(law.Task):
 
     version = law.Parameter()
 
+    use_full_stats = luigi.BoolParameter(default=False)
+
     def store_parts(self):
         task_name = self.__class__.__name__
         return (
             os.getenv("OUTPUT_DIR"),
             f"version_{self.version}",
             task_name,
+            f"use_full_stats_{self.use_full_stats}",
         )
 
     def local_path(self, *path):

@@ -34,7 +34,11 @@ class ProcessSignal(SignalStrengthMixin, ProcessMixin, BaseTask):
     @law.decorator.safe_output
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
-        data_path = f"{data_dir}/hopefully_finally_final_signal_features_W_qq.h5"
+
+        if self.use_full_stats:
+            data_path = f"{data_dir}/hopefully_really_final_signal_features_W_qq.h5"
+        else:
+            data_path = f"{data_dir}/hopefully_finally_final_signal_features_W_qq.h5"
 
         from src.data_prep.signal_processing import process_signals
 
@@ -100,10 +104,12 @@ class ProcessBkg(BaseTask):
         from src.data_prep.bkg_processing import process_bkgs
 
         output_qcd = process_bkgs(data_path_qcd)
-        # output_extra_qcd = process_bkgs(data_path_extra_qcd)
 
-        # output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
-        output_combined = output_qcd
+        if self.use_full_stats:
+            output_extra_qcd = process_bkgs(data_path_extra_qcd)
+            output_combined = np.concatenate([output_qcd, output_extra_qcd], axis=0)
+        else:
+            output_combined = output_qcd
 
         # split into trainval and test set
         from src.data_prep.data_prep import background_split
