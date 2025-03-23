@@ -24,18 +24,17 @@ from src.tasks.preprocessing import PreprocessingFold
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
 from src.tasks.rnodetemplate import (
-    CoarseScanRANODEoverW,
+    ScanRANODE,
     RNodeTemplate,
-    CoarseScanRANODEFixedSplitSeed,
 )
 
 
 class FittingScanResults(
-    CoarseScanRANODEoverW,
+    ScanRANODE,
 ):
 
     def requires(self):
-        return CoarseScanRANODEoverW.req(self)
+        return ScanRANODE.req(self)
 
     def output(self):
         return {

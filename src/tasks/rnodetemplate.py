@@ -150,11 +150,12 @@ class ScanRANODEFixedSeed(
             model_path_list_scan[f"scan_index_{index_w}"] = model_path
 
         val_loss_scan = np.array(val_loss_scan)
-        val_loss_scan = -1 * val_loss_scan
+        val_loss_scan = -1 * val_loss_scan.flatten()
 
         print(w_range)
         print(val_loss_scan)
 
+        self.output()["model_list"].parent.touch()
         with open(self.output()["model_list"].path, "w") as f:
             json.dump(model_path_list_scan, f, cls=NumpyEncoder)
 
@@ -229,11 +230,8 @@ class ScanRANODE(
 
                 model_list = model_scan_dict[f"scan_index_{w_index}"]
 
-                from IPython import embed;embed()  # fmt: skip
-                1 / 0
-
                 prob_S, prob_B = ranode_pred(
-                    model_list, w_value, test_data_path, bkg_prob_test_path
+                    model_list, test_data_path, bkg_prob_test_path
                 )
 
                 # prob_S shape is (num_models, num_samples), prob_B shape is (num_samples,)
@@ -246,8 +244,6 @@ class ScanRANODE(
 
         prob_S_list = np.array(prob_S_list)
         prob_B_list = prob_B
-
-        from IPython import embed;embed()  # fmt: skip
 
         self.output()["prob_S_scan"].parent.touch()
         np.save(self.output()["prob_S_scan"].path, prob_S_list)
