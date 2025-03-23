@@ -27,11 +27,32 @@ def train_model_S(
 
     print("loading data")
     # load data
-    data_train_SR_B = np.load(input_dir["preprocessing"]["data_train_SR_model_B"].path)
-    data_val_SR_B = np.load(input_dir["preprocessing"]["data_val_SR_model_B"].path)
+    data_trainval_SR_B = np.load(
+        input_dir["preprocessing"]["data_trainval_SR_model_B"].path
+    )
+    data_trainval_SR_S = np.load(
+        input_dir["preprocessing"]["data_trainval_SR_model_S"].path
+    )
     # bkg prob predicted by model_B
-    data_train_SR_B_prob = np.load(input_dir["bkgprob"]["log_B_train"].path)
-    data_val_SR_B_prob = np.load(input_dir["bkgprob"]["log_B_val"].path)
+    data_trainval_SR_B_prob = np.load(input_dir["bkgprob"]["log_B_trainval"].path)
+
+    # according to train random seed, shuffle index
+    np.random.seed(train_random_seed)
+    index_shuffle = np.random.permutation(data_trainval_SR_B.shape[0])
+    data_trainval_SR_B = data_trainval_SR_B[index_shuffle]
+    data_trainval_SR_S = data_trainval_SR_S[index_shuffle]
+    data_trainval_SR_B_prob = data_trainval_SR_B_prob[index_shuffle]
+
+    # split train val in 0.8, 0.2
+    split_index = int(data_trainval_SR_B.shape[0] * 0.8)
+    data_train_SR_B = data_trainval_SR_B[:split_index]
+    data_val_SR_B = data_trainval_SR_B[split_index:]
+
+    data_train_SR_S = data_trainval_SR_S[:split_index]
+    data_val_SR_S = data_trainval_SR_S[split_index:]
+
+    data_train_SR_B_prob = data_trainval_SR_B_prob[:split_index]
+    data_val_SR_B_prob = data_trainval_SR_B_prob[split_index:]
 
     print("num sig in train: ", (data_train_SR_B[:, -1] == 1).sum())
     print("num sig in val: ", (data_val_SR_B[:, -1] == 1).sum())
@@ -43,9 +64,6 @@ def train_model_S(
     SR_mass_bins = np.array(mass_hist["bins"])
     density_back = rv_histogram((SR_mass_hist, SR_mass_bins))
 
-    # data to train model_S
-    data_train_SR_S = np.load(input_dir["preprocessing"]["data_train_SR_model_S"].path)
-    data_val_SR_S = np.load(input_dir["preprocessing"]["data_val_SR_model_S"].path)
     # data to train model_S
     traintensor_S = torch.from_numpy(data_train_SR_S.astype("float32")).to(device)
     valtensor_S = torch.from_numpy(data_val_SR_S.astype("float32")).to(device)
@@ -93,6 +111,8 @@ def train_model_S(
     from src.models.model_S import r_anode_mass_joint_untransformed, flows_model_RQS
 
     model_S = flows_model_RQS(device=device, num_features=5, context_features=None)
+    # print num of params
+    print("model S num of params: ", sum(p.numel() for p in model_S.parameters()))
     optimizer = torch.optim.AdamW(model_S.parameters(), lr=3e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=10, T_mult=2

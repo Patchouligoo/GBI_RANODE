@@ -127,7 +127,7 @@ class BkgModelMixin:
 class SigTemplateTrainingUncertaintyMixin:
 
     # controls the random seed for the training
-    train_num_sig_templates = luigi.IntParameter(default=5)
+    train_num_sig_templates = luigi.IntParameter(default=10)
 
     def store_parts(self):
         return super().store_parts() + (

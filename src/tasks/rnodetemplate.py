@@ -61,28 +61,21 @@ class RNodeTemplate(
 
         input_dict = {
             "preprocessing": {
-                "data_train_SR_model_S": self.input()["preprocessed_data"][
-                    "SR_data_train_model_S"
+                "data_trainval_SR_model_S": self.input()["preprocessed_data"][
+                    "SR_data_trainval_model_S"
                 ],
-                "data_val_SR_model_S": self.input()["preprocessed_data"][
-                    "SR_data_val_model_S"
-                ],
-                "data_train_SR_model_B": self.input()["preprocessed_data"][
-                    "SR_data_train_model_B"
-                ],
-                "data_val_SR_model_B": self.input()["preprocessed_data"][
-                    "SR_data_val_model_B"
+                "data_trainval_SR_model_B": self.input()["preprocessed_data"][
+                    "SR_data_trainval_model_B"
                 ],
                 "SR_mass_hist": self.input()["preprocessed_data"]["SR_mass_hist"],
             },
             "bkgprob": {
-                "log_B_train": self.input()["bkgprob"]["log_B_train"],
-                "log_B_val": self.input()["bkgprob"]["log_B_val"],
+                "log_B_trainval": self.input()["bkgprob"]["log_B_trainval"],
             },
         }
 
         print(
-            f"train model S with train random seed {self.train_random_seed}, sample random seed {self.fold_split_seed}, s_ratio {self.s_ratio}"
+            f"train model S with train random seed {self.train_random_seed}, sample fold {self.fold_split_seed}, s_ratio {self.s_ratio}"
         )
         from src.models.train_model_S import train_model_S
 
@@ -99,7 +92,8 @@ class RNodeTemplate(
         )
 
 
-class CoarseScanRANODEFixedSplitSeed(
+class ScanRANODEFixedSeed(
+    TemplateRandomMixin,
     SigTemplateTrainingUncertaintyMixin,
     FoldSplitRandomMixin,
     FoldSplitUncertaintyMixin,
@@ -118,21 +112,16 @@ class CoarseScanRANODEFixedSplitSeed(
         )
 
         for index in range(self.scan_number):
-            model_list[f"model_{index}"] = [
-                RNodeTemplate.req(
-                    self,
-                    w_value=w_range[index],
-                    train_random_seed=i,
-                )
-                for i in range(self.train_num_sig_templates)
-            ]
+            model_list[f"model_{index}"] = RNodeTemplate.req(
+                self,
+                w_value=w_range[index],
+                train_random_seed=self.train_random_seed,
+            )
 
         return model_list
 
     def output(self):
         return {
-            "coarse_scan_plot": self.local_target("fitting_result.pdf"),
-            "scan_result": self.local_target("scan_result.json"),
             "model_list": self.local_target("model_list.json"),
         }
 
@@ -149,53 +138,30 @@ class CoarseScanRANODEFixedSplitSeed(
 
         for index_w in range(self.scan_number):
 
-            val_loss_list = []
-            model_path_list = []
+            # save min val loss
+            metadata_w = self.input()[f"model_{index_w}"]["metadata"].load()
+            min_val_loss = metadata_w["min_val_loss_list"]
+            val_events_num = metadata_w["num_val_events"]
 
-            for i in range(self.train_num_sig_templates):
+            # save model paths
+            model_path = [self.input()[f"model_{index_w}"]["sig_model"].path]
 
-                # save min val loss
-                metadata_w_i = self.input()[f"model_{index_w}"][i]["metadata"].load()
-                min_val_loss_list = metadata_w_i["min_val_loss_list"]
-                val_events_num = metadata_w_i["num_val_events"]
-                val_loss_list.extend(min_val_loss_list)
-
-                # save model paths
-                model_path_list_i = [
-                    self.input()[f"model_{index_w}"][i]["sig_model"].path
-                ]
-                model_path_list.extend(model_path_list_i)
-
-            val_loss_scan.append(val_loss_list)
-            model_path_list_scan[f"scan_index_{index_w}"] = model_path_list
+            val_loss_scan.append(min_val_loss)
+            model_path_list_scan[f"scan_index_{index_w}"] = model_path
 
         val_loss_scan = np.array(val_loss_scan)
         val_loss_scan = -1 * val_loss_scan
 
-        val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
-        val_loss_scan_std = np.std(val_loss_scan, axis=1)
-
-        from src.fitting.fitting import fit_likelihood
-
-        self.output()["coarse_scan_plot"].parent.touch()
-        output_metadata = fit_likelihood(
-            w_range_log,
-            val_loss_scan_mean,
-            val_loss_scan_std,
-            np.log10(self.s_ratio),
-            val_events_num,
-            self.output()["coarse_scan_plot"].path,
-        )
-
-        with open(self.output()["scan_result"].path, "w") as f:
-            json.dump(output_metadata, f, cls=NumpyEncoder)
+        print(w_range)
+        print(val_loss_scan)
 
         with open(self.output()["model_list"].path, "w") as f:
             json.dump(model_path_list_scan, f, cls=NumpyEncoder)
 
 
-class CoarseScanRANODEoverW(
+class ScanRANODE(
     SigTemplateTrainingUncertaintyMixin,
+    FoldSplitRandomMixin,
     FoldSplitUncertaintyMixin,
     BkgModelMixin,
     WScanMixin,
@@ -207,26 +173,16 @@ class CoarseScanRANODEoverW(
     def requires(self):
 
         model_results = {}
-        test_data_results = {}
-        test_bkgprob = {}
 
-        for index in range(1, self.fold_split_num + 1):  # start from 1
-            model_results[f"model_seed_{index}"] = CoarseScanRANODEFixedSplitSeed.req(
-                self, fold_split_seed=index
-            )
-            test_data_results[f"test_data_seed_{index}"] = PreprocessingFold.req(
-                self,
-                fold_split_seed=index,
-            )
-            test_bkgprob[f"bkgprob_test_seed_{index}"] = PredictBkgProb.req(
-                self,
-                fold_split_seed=index,
+        for index in range(self.train_num_sig_templates):
+            model_results[f"model_seed_{index}"] = ScanRANODEFixedSeed.req(
+                self, train_random_seed=index
             )
 
         return {
             "model_S_scan_result": model_results,
-            "data": test_data_results,
-            "bkgprob": test_bkgprob,
+            "data": PreprocessingFold.req(self),
+            "bkgprob": PredictBkgProb.req(self),
         }
 
     def output(self):
@@ -244,28 +200,24 @@ class CoarseScanRANODEoverW(
             np.log10(self.w_min), np.log10(self.w_max), self.scan_number
         )
 
-        prob_B_list = []
         prob_S_list = []
 
         # for each w test value
         for w_index in range(self.scan_number):
 
-            prob_S_list_w = None
-            prob_B_list_w = None
+            prob_S_list_w = []
 
             w_value = w_scan_list[w_index]
             print(f" - evaluating scan index {w_index}, w value {w_value}")
 
-            # for each fold, load the model, evaluate the model on test data, and save the prob_S
-            for index in range(1, self.fold_split_num + 1):
+            # for each random seed, load the model, evaluate the model on test data, and save the prob_S
+            for index in range(self.train_num_sig_templates):
 
                 # data path
-                test_data_path = self.input()["data"][f"test_data_seed_{index}"]
+                test_data_path = self.input()["data"]
 
                 # prob B path
-                bkg_prob_test_path = self.input()["bkgprob"][
-                    f"bkgprob_test_seed_{index}"
-                ]["log_B_test"]
+                bkg_prob_test_path = self.input()["bkgprob"]["log_B_test"]
 
                 # model list
                 model_list_path = self.input()["model_S_scan_result"][
@@ -276,304 +228,27 @@ class CoarseScanRANODEoverW(
                     model_scan_dict = json.load(f)
 
                 model_list = model_scan_dict[f"scan_index_{w_index}"]
+
+                from IPython import embed;embed()  # fmt: skip
+                1 / 0
+
                 prob_S, prob_B = ranode_pred(
                     model_list, w_value, test_data_path, bkg_prob_test_path
                 )
 
                 # prob_S shape is (num_models, num_samples), prob_B shape is (num_samples,)
-                if prob_S_list_w is None:
+                if len(prob_S_list_w) == 0:
                     prob_S_list_w = prob_S
-                    prob_B_list_w = prob_B
                 else:
-                    prob_S_list_w = np.concatenate([prob_S_list_w, prob_S], axis=-1)
-                    prob_B_list_w = np.concatenate([prob_B_list_w, prob_B], axis=-1)
+                    prob_S_list_w = np.concatenate([prob_S_list_w, prob_S], axis=0)
 
             prob_S_list.append(prob_S_list_w)
-            prob_B_list.append(prob_B_list_w)
 
         prob_S_list = np.array(prob_S_list)
-        prob_B_list = np.array(prob_B_list)
+        prob_B_list = prob_B
+
+        from IPython import embed;embed()  # fmt: skip
 
         self.output()["prob_S_scan"].parent.touch()
         np.save(self.output()["prob_S_scan"].path, prob_S_list)
         np.save(self.output()["prob_B_scan"].path, prob_B_list)
-
-
-# class FineScanRANOD(
-#     TemplateRandomMixin,
-#     SignalStrengthMixin,
-#     ProcessMixin,
-#     BaseTask,
-# ):
-
-#     fine_scan_index = luigi.IntParameter(default=0)
-#     num_fine_scan = luigi.IntParameter(default=10)
-#     batchsize = luigi.IntParameter(default=2048)
-#     epoches = luigi.IntParameter(default=100)
-#     num_model_to_save = luigi.IntParameter(default=10)
-#     device = luigi.Parameter(default="cuda")
-
-#     def store_parts(self):
-#         return super().store_parts() + (f"fine_scan_{self.fine_scan_index}",)
-
-#     def requires(self):
-#         return {
-#             'coarse_scan': CoarseScanRANODEoverW.req(self),
-#             'preprocessing': Preprocessing.req(self),
-#             'bkgprob': PredictBkgProb.req(self),
-#         }
-
-#     def output(self):
-#         return {
-#             "sig_models": [self.local_target(f"model_S_{i}.pt") for i in range(self.num_model_to_save)],
-#             "trainloss_list": self.local_target("trainloss_list.npy"),
-#             "valloss_list": self.local_target("valloss_list.npy"),
-#             "metadata": self.local_target("metadata.json"),
-#         }
-
-#     @law.decorator.safe_output
-#     def run(self):
-
-#         with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
-#             peak_info = json.load(f)
-
-#         mu_lower = peak_info["mu_fine_scan_range_left"]
-#         mu_upper = peak_info["mu_fine_scan_range_right"]
-
-#         mu_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
-
-#         curr_mu = mu_scan_range[self.fine_scan_index]
-
-#         print("scan over ", mu_scan_range)
-#         print("current value ", curr_mu)
-
-#         from src.models.train_model_S import train_model_S
-#         train_model_S(self.input(), self.output(), self.s_ratio, curr_mu, self.batchsize, self.epoches, self.num_model_to_save, self.train_random_seed, self.device)
-
-
-# class FineScanRANODEoverW(
-#     SigTemplateUncertaintyMixin,
-#     SignalStrengthMixin,
-#     ProcessMixin,
-#     BaseTask,
-# ):
-
-#     num_fine_scan = luigi.IntParameter(default=10)
-
-#     def requires(self):
-
-#         model_list = {}
-#         for fine_scan_index in range(self.num_fine_scan):
-#             model_list[f"fine_scan_{fine_scan_index}"] = [FineScanRANOD.req(self, fine_scan_index=fine_scan_index, train_random_seed=(i+100)) for i in range(self.num_sig_templates)]
-
-#         return {
-#             "fine_scan_models": model_list,
-#             "coarse_scan": CoarseScanRANODEoverW.req(self),
-#         }
-
-#     def output(self):
-#         return {
-#             "scan_result": self.local_target("scan_result.json"),
-#             "fine_scan_plot": self.local_target("fitting_result.pdf"),
-#         }
-
-#     @law.decorator.safe_output
-#     def run(self):
-
-#         with open(self.input()["coarse_scan"]["peak_info"].path, 'r') as f:
-#             peak_info = json.load(f)
-
-#         mu_lower = peak_info["mu_fine_scan_range_left"]
-#         mu_upper = peak_info["mu_fine_scan_range_right"]
-#         mu_fine_scan_range = np.linspace(mu_lower, mu_upper, self.num_fine_scan+2)[1:-1]
-
-#         mu_dp_coarse_scan = peak_info["mu_dp_coarse_scan"]
-#         mu_dp_mean_coarse_scan = peak_info["mu_dp_mean_coarse_scan"]
-#         mu_dp_std_coarse_scan = peak_info["mu_dp_std_coarse_scan"]
-
-#         val_loss_scan = []
-
-#         for index_w in range(self.num_fine_scan):
-
-#             val_loss_list = []
-
-#             for index_seed in range(self.num_sig_templates):
-#                 metadata_w_i = self.input()["fine_scan_models"][f"fine_scan_{index_w}"][index_seed]["metadata"].load()
-#                 min_val_loss_list = metadata_w_i["min_val_loss_list"]
-#                 val_events_num = metadata_w_i["num_val_events"]
-#                 val_loss_list.extend(min_val_loss_list)
-
-#             val_loss_scan.append(val_loss_list)
-
-#         # pick the top 20 models with smallest loss
-#         val_loss_scan = np.array(val_loss_scan)
-#         # val_loss_scan = np.sort(val_loss_scan, axis=-1)[:, :20]
-
-#         # multiple by -1 since the loss is -log[mu*P(sig) + (1-mu)*P(bkg)] but we want likelihood
-#         # which is log[mu*P(sig) + (1-mu)*P(bkg)]
-#         val_loss_scan = -1 * val_loss_scan
-#         val_loss_scan_mean = np.mean(val_loss_scan, axis=1)
-#         val_loss_scan_std = np.std(val_loss_scan, axis=1)
-
-#         # combine coarse scan and fine scan in order of mu
-#         mu_scan_range = np.concatenate([mu_dp_coarse_scan, mu_fine_scan_range])
-#         val_loss_scan_mean = np.concatenate([mu_dp_mean_coarse_scan, val_loss_scan_mean])
-#         val_loss_scan_std = np.concatenate([mu_dp_std_coarse_scan, val_loss_scan_std])
-
-#         # sort the mu values
-#         sort_index = np.argsort(mu_scan_range)
-#         mu_scan_range = mu_scan_range[sort_index]
-#         val_loss_scan_mean = val_loss_scan_mean[sort_index]
-#         val_loss_scan_std = val_loss_scan_std[sort_index]
-
-#         from src.fitting.fitting import fit_likelihood
-#         self.output()["fine_scan_plot"].parent.touch()
-#         output_metadata = fit_likelihood(np.log10(mu_scan_range), val_loss_scan_mean, val_loss_scan_std, np.log10(self.s_ratio), val_events_num, self.output()["fine_scan_plot"].path)
-
-#         mu_pred = output_metadata["mu_pred"]
-#         best_model_index_fine_scan = np.argmin(np.abs(mu_fine_scan_range - mu_pred))
-#         mu_lowerbound = output_metadata["mu_lowerbound"]
-#         mu_upperbound = output_metadata["mu_upperbound"]
-
-#         # scan result
-#         scan_result = {
-#             "mu_true": self.s_ratio,
-#             "mu_pred": mu_pred,
-#             "best_model_index_fine_scan": best_model_index_fine_scan,
-#             "mu_lowerbound": mu_lowerbound,
-#             "mu_upperbound": mu_upperbound,
-#         }
-
-#         with open(self.output()["scan_result"].path, 'w') as f:
-#             json.dump(scan_result, f, cls=NumpyEncoder)
-
-
-# class GenerateSignals(
-#    ScanRANODEoverW,
-# ):
-#     device = luigi.Parameter(default="cuda")
-#     n_signal_samples = luigi.IntParameter(default=10000)
-
-#     def requires(self):
-#         model_list = {}
-#         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
-
-#         for index in range(self.scan_number):
-#             model_list[f"model_{index}"] = [RNodeTemplate.req(self, w_value=w_range[index], train_random_seed=i) for i in range(self.num_templates)]
-
-#         w_scan_results = ScanRANODEoverW.req(self)
-
-#         return {
-#             "models": model_list,
-#             "w_scan_results": w_scan_results,
-#         }
-
-#     def output(self):
-#         return {
-#             "signal_list": self.local_target("signal_list.npy"),
-#         }
-
-#     @law.decorator.safe_output
-#     def run(self):
-
-#         # load previous scan result
-#         w_scan_results = self.input()["w_scan_results"]["metadata"].load()
-#         w_best = w_scan_results["w_best"]
-#         w_best_index = w_scan_results["w_best_index"]
-
-#         # load the model at best w
-#         model_best_list = []
-#         for rand_seed_index in range(len(self.input()["models"][f"model_{w_best_index}"])):
-#             model_best_seed_i = self.input()["models"][f"model_{w_best_index}"][rand_seed_index]["sig_models"]
-#             for model in model_best_seed_i:
-#                 model_best_list.append(model.path)
-
-#         # define model
-#         ranode_path = os.environ.get("RANODE")
-#         sys.path.append(ranode_path)
-#         from nflow_utils import flows_model_RQS
-
-#         # generate signals from each models
-#         signal_list = []
-#         for model_dir in model_best_list:
-#             model_S = flows_model_RQS(device=self.device, num_features=5, context_features=None)
-#             model_S.load_state_dict(torch.load(model_dir))
-#             model_S.eval()
-
-#             signal_samples = model_S.sample(self.n_signal_samples)
-#             signal_list.append(signal_samples.cpu().detach().numpy())
-
-#             # clean cuda memory
-#             del model_S
-#             torch.cuda.empty_cache()
-
-#         # sample weight is 1 / num_models
-#         signal_list = np.array(signal_list)
-#         sample_weight = 1 / signal_list.shape[0]
-#         sample_weight = np.ones((len(signal_list), self.n_signal_samples, 1)) * sample_weight
-
-#         signal_list = np.concatenate([signal_list, sample_weight], axis=-1)
-
-#         signal_list = signal_list.reshape(-1, 6)
-
-#         self.output()["signal_list"].parent.touch()
-#         np.save(self.output()["signal_list"].path, signal_list)
-
-
-# class SignalGenerationPlot(
-#     GenerateSignals,
-# ):
-#     nbins = luigi.IntParameter(default=41)
-
-#     def requires(self):
-#         return {
-#             "generated_signal_list": GenerateSignals.req(self, n_signal_samples=self.n_sig),
-#             "preprocessing": Preprocessing.req(self),
-#         }
-
-#     def output(self):
-#         return self.local_target("signal_plot.pdf")
-
-#     @law.decorator.safe_output
-#     def run(self):
-
-#         generated_signals = np.load(self.input()["generated_signal_list"]["signal_list"].path)
-#         generated_signal_features = generated_signals[:, 1:-1]
-#         generated_signal_weights = generated_signals[:, -1]
-#         generated_signals_mass = generated_signal_features[:, 0]
-
-#         # load data
-#         data_val_SR_S = np.load(self.input()['preprocessing']['data_val_SR_S'].path)
-#         mask_signals_val = data_val_SR_S[:, -1] == 1
-#         signal_val = data_val_SR_S[mask_signals_val]
-#         signal_val_features = signal_val[:, 1:-1]
-#         signal_val_mass = signal_val_features[:, 0]
-
-#         mask_bkg_val = data_val_SR_S[:, -1] == 0
-#         bkg_val = data_val_SR_S[mask_bkg_val]
-#         bkg_val_features = bkg_val[:, 1:-1]
-#         bkg_val_mass = bkg_val_features[:, 0]
-
-#         # plot
-#         import matplotlib.pyplot as plt
-#         from matplotlib.backends.backend_pdf import PdfPages
-
-#         self.output().parent.touch()
-#         with PdfPages(self.output().path) as pdf:
-
-#             for feature_index in range(signal_val_features.shape[1]):
-
-#                 bins = np.linspace(bkg_val_features[:, feature_index].min(), bkg_val_features[:, feature_index].max(), self.nbins)
-
-#                 f = plt.figure()
-#                 plt.hist(signal_val_features[:, feature_index], bins=bins, alpha=0.5, label='val signal', density=True, histtype='step', lw=3)
-#                 plt.hist(bkg_val_features[:, feature_index], bins=bins, alpha=0.5, label='val bkg', density=True, histtype='step', lw=3)
-#                 plt.hist(generated_signal_features[:, feature_index], bins=bins, weights=generated_signal_weights,
-#                          alpha=0.5, label='generated signal', density=True, histtype='step', lw=3)
-#                 plt.xlabel(f'feature {feature_index}')
-#                 plt.ylabel('density')
-#                 plt.title(f'feature {feature_index} distribution, {self.n_sig} signal in samples')
-#                 plt.legend()
-#                 plt.yscale('log')
-#                 pdf.savefig(f)
-#                 plt.close(f)

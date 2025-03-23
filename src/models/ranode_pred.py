@@ -13,7 +13,7 @@ from src.utils.utils import NumpyEncoder, str_encode_value
 from src.models.train_model_S import pred_model_S
 
 
-def ranode_pred(model_S_list, w_test, test_data_dict, bkg_prob_dir):
+def ranode_pred(model_S_list, test_data_dict, bkg_prob_dir):
 
     # load data
     print("loading data")
