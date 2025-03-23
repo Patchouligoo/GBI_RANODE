@@ -5,7 +5,7 @@ from src.data_prep.utils import get_dijetmass_ptetaphi
 from src.utils.utils import str_encode_value
 
 
-def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
+def process_signals(input_path, mx, my, s_ratio, seed, type):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
@@ -52,7 +52,7 @@ def process_signals(input_path, output_path, mx, my, s_ratio, seed, type):
         [mjj, mjmin, mjmax - mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1
     )
 
-    np.save(output_path, output)
+    return output
 
 
 def process_signals_test(

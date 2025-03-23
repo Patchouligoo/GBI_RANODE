@@ -19,7 +19,7 @@ from src.utils.law import (
 )
 
 
-class ProcessSignal(FoldSplitRandomMixin, SignalStrengthMixin, ProcessMixin, BaseTask):
+class ProcessSignal(SignalStrengthMixin, ProcessMixin, BaseTask):
     """
     Will reprocess the signal such that they have shape (N, 6) where N is the number of events.
     The columns are:
@@ -28,9 +28,7 @@ class ProcessSignal(FoldSplitRandomMixin, SignalStrengthMixin, ProcessMixin, Bas
 
     def output(self):
         return {
-            "train": self.local_target("reprocessed_signals_train.npy"),
-            "val": self.local_target("reprocessed_signals_val.npy"),
-            "test": self.local_target("reprocessed_signals_test.npy"),
+            "signals": self.local_target("reprocessed_signals.npy"),
         }
 
     @law.decorator.safe_output
@@ -40,34 +38,35 @@ class ProcessSignal(FoldSplitRandomMixin, SignalStrengthMixin, ProcessMixin, Bas
 
         from src.data_prep.signal_processing import process_signals
 
-        self.output()["train"].parent.touch()
-        process_signals(
+        self.output()["signals"].parent.touch()
+        train_output = process_signals(
             data_path,
-            self.output()["train"].path,
             self.mx,
             self.my,
             self.s_ratio,
-            self.fold_split_seed,
+            self.ensemble,
             type="x_train",
         )
-        process_signals(
+        val_output = process_signals(
             data_path,
-            self.output()["val"].path,
             self.mx,
             self.my,
             self.s_ratio,
-            self.fold_split_seed,
+            self.ensemble,
             type="x_val",
         )
-        process_signals(
+        test_output = process_signals(
             data_path,
-            self.output()["test"].path,
             self.mx,
             self.my,
             self.s_ratio,
-            self.fold_split_seed,
+            self.ensemble,
             type="x_test",
         )
+
+        self.output()["signals"].parent.touch()
+        sig_combined = np.concatenate([train_output, val_output, test_output], axis=0)
+        np.save(self.output()["signals"].path, sig_combined)
 
 
 class ProcessBkg(BaseTask):
@@ -172,15 +171,13 @@ class PreprocessingFold(
 
     def output(self):
         return {
-            "SR_data_train_model_S": self.local_target(
-                "data_SR_data_train_model_S.npy"
+            "SR_data_trainval_model_S": self.local_target(
+                "data_SR_data_trainval_model_S.npy"
             ),
-            "SR_data_val_model_S": self.local_target("data_SR_data_val_model_S.npy"),
             "SR_data_test_model_S": self.local_target("data_SR_data_test_model_S.npy"),
-            "SR_data_train_model_B": self.local_target(
-                "data_SR_data_train_model_B.npy"
+            "SR_data_trainval_model_B": self.local_target(
+                "data_SR_data_trainval_model_B.npy"
             ),
-            "SR_data_val_model_B": self.local_target("data_SR_data_val_model_B.npy"),
             "SR_data_test_model_B": self.local_target("data_SR_data_test_model_B.npy"),
             "SR_mass_hist": self.local_target("SR_mass_hist.json"),
         }
@@ -196,9 +193,7 @@ class PreprocessingFold(
 
         # load data
         if self.s_ratio != 0:
-            SR_signal_train = np.load(self.input()["signal"]["train"].path)
-            SR_signal_val = np.load(self.input()["signal"]["val"].path)
-            SR_signal_test = np.load(self.input()["signal"]["test"].path)
+            SR_signal = np.load(self.input()["signal"]["signals"].path)
         SR_bkg = np.load(self.input()["bkg"]["SR_bkg"].path)
 
         pre_parameters = json.load(
@@ -219,122 +214,68 @@ class PreprocessingFold(
             json.dump({"hist": hist_back[0], "bins": hist_back[1]}, f, cls=NumpyEncoder)
 
         # ----------------------- make SR data -----------------------
-        # split the SR bkg into fold_split_num folds, then pick the fold_split_seed-th -1 fold as test set
-        # -1 since fold_split_seed starts from 1
-        # the fold_split_seed-2-th fold as val set, and the rest as train set
-        # SR bkg has been shuffled in the ProcessBkg task
-        assert (self.fold_split_seed <= self.fold_split_num) and (
-            self.fold_split_seed > 0
-        ), "fold_split_seed cannot be larger than fold_split_num, and must be larger than 0"
-
-        SR_bkg_folds = {}
-        for fold in range(self.fold_split_num):
-            SR_bkg_folds[fold] = SR_bkg[
-                fold
-                * int(len(SR_bkg) / self.fold_split_num) : (fold + 1)
-                * int(len(SR_bkg) / self.fold_split_num)
-            ]
-
-        # get the SR bkg train val test set
-        SR_bkg_test_index = self.fold_split_seed - 1
-        SR_bkg_val_index = (self.fold_split_seed - 2) % self.fold_split_num
-        SR_bkg_train_index_list = [
-            fold
-            for fold in range(self.fold_split_num)
-            if fold not in [SR_bkg_test_index, SR_bkg_val_index]
-        ]
-        SR_bkg_train = np.concatenate(
-            [SR_bkg_folds[fold] for fold in SR_bkg_train_index_list], axis=0
-        )
-        SR_bkg_val = SR_bkg_folds[SR_bkg_val_index]
-        SR_bkg_test = SR_bkg_folds[SR_bkg_test_index]
 
         # concatenate signal and bkg
         if self.s_ratio != 0:
-            SR_data_train = np.concatenate([SR_signal_train, SR_bkg_train], axis=0)
-            SR_data_val = np.concatenate([SR_signal_val, SR_bkg_val], axis=0)
-            SR_data_test = np.concatenate([SR_signal_test, SR_bkg_test], axis=0)
+            SR_data = np.concatenate([SR_signal, SR_bkg], axis=0)
         else:
-            SR_data_train = SR_bkg_train
-            SR_data_val = SR_bkg_val
-            SR_data_test = SR_bkg_test
+            SR_data = SR_bkg
 
-        SR_data_train = shuffle(SR_data_train, random_state=self.fold_split_seed)
-        SR_data_val = shuffle(SR_data_val, random_state=self.fold_split_seed)
-        SR_data_test = shuffle(SR_data_test, random_state=self.fold_split_seed)
-
-        # SR_data_trainval
+        # process data
         _, mask = logit_transform(
-            SR_data_train[:, 1:-1], pre_parameters["min"], pre_parameters["max"]
+            SR_data[:, 1:-1], pre_parameters["min"], pre_parameters["max"]
         )
-        SR_data_train = SR_data_train[mask]
-        SR_data_train = preprocess_params_transform(SR_data_train, pre_parameters)
-        # here x_train will be feed into both model_S and model_B later, to get prob of signal and background
+        SR_data = SR_data[mask]
+        SR_data = preprocess_params_transform(SR_data, pre_parameters)
 
-        # val data
-        _, mask = logit_transform(
-            SR_data_val[:, 1:-1], pre_parameters["min"], pre_parameters["max"]
-        )
-        SR_data_val = SR_data_val[mask]
-        SR_data_val = preprocess_params_transform(SR_data_val, pre_parameters)
+        # split into trainval and test set
+        from src.data_prep.utils import fold_splitting
 
-        # test data
-        _, mask = logit_transform(
-            SR_data_test[:, 1:-1], pre_parameters["min"], pre_parameters["max"]
+        SR_data_trainval, SR_data_test = fold_splitting(
+            SR_data,
+            n_folds=self.fold_split_num,
+            random_seed=42,
+            test_fold=self.fold_split_seed,
         )
-        SR_data_test = SR_data_test[mask]
-        SR_data_test = preprocess_params_transform(SR_data_test, pre_parameters)
 
         # For signal model, we shift the mass by -3.5 following RANODE workflow
         # copy one set for signal model
-        SR_data_train_model_S = SR_data_train.copy()
-        SR_data_val_model_S = SR_data_val.copy()
+        SR_data_trainval_model_S = SR_data_trainval.copy()
         SR_data_test_model_S = SR_data_test.copy()
         # shift mass by -3.5 for signals
-        SR_data_train_model_S[:, 0] -= 3.5
-        SR_data_val_model_S[:, 0] -= 3.5
+        SR_data_trainval_model_S[:, 0] -= 3.5
         SR_data_test_model_S[:, 0] -= 3.5
 
-        np.save(self.output()["SR_data_train_model_S"].path, SR_data_train_model_S)
-        np.save(self.output()["SR_data_val_model_S"].path, SR_data_val_model_S)
+        np.save(
+            self.output()["SR_data_trainval_model_S"].path, SR_data_trainval_model_S
+        )
         np.save(self.output()["SR_data_test_model_S"].path, SR_data_test_model_S)
 
         # copy another set for background model
-        SR_data_train_model_B = SR_data_train.copy()
-        SR_data_val_model_B = SR_data_val.copy()
+        SR_data_trainval_model_B = SR_data_trainval.copy()
         SR_data_test_model_B = SR_data_test.copy()
 
-        np.save(self.output()["SR_data_train_model_B"].path, SR_data_train_model_B)
-        np.save(self.output()["SR_data_val_model_B"].path, SR_data_val_model_B)
+        np.save(
+            self.output()["SR_data_trainval_model_B"].path, SR_data_trainval_model_B
+        )
         np.save(self.output()["SR_data_test_model_B"].path, SR_data_test_model_B)
 
         # print out some info
-        train_sig_num = SR_data_train_model_B[:, -1].sum()
-        train_bkg_num = (SR_data_train_model_B[:, -1] == 0).sum()
-        train_mu = train_sig_num / (train_sig_num + train_bkg_num)
-        val_sig_num = SR_data_val_model_B[:, -1].sum()
-        val_bkg_num = (SR_data_val_model_B[:, -1] == 0).sum()
-        val_mu = val_sig_num / (val_sig_num + val_bkg_num)
+        trainval_sig_num = SR_data_trainval_model_B[:, -1].sum()
+        trainval_bkg_num = (SR_data_trainval_model_B[:, -1] == 0).sum()
+        train_mu = trainval_sig_num / (trainval_sig_num + trainval_bkg_num)
         test_sig_num = SR_data_test_model_B[:, -1].sum()
         test_bkg_num = (SR_data_test_model_B[:, -1] == 0).sum()
         test_mu = test_sig_num / (test_sig_num + test_bkg_num)
         print("Fold splitting index is: ", self.fold_split_seed)
         print("true mu: ", self.s_ratio)
         print(
-            "train mu: ",
+            "trainval mu: ",
             train_mu,
-            "train sig num: ",
-            train_sig_num,
-            "train bkg num: ",
-            train_bkg_num,
-        )
-        print(
-            "val mu: ",
-            val_mu,
-            "val sig num: ",
-            val_sig_num,
-            "val bkg num: ",
-            val_bkg_num,
+            "trainval sig num: ",
+            trainval_sig_num,
+            "trainval bkg num: ",
+            trainval_bkg_num,
         )
         print(
             "test mu: ",

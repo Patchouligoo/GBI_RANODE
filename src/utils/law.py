@@ -40,10 +40,13 @@ class ProcessMixin:
     mx = luigi.IntParameter(default=100)
     my = luigi.IntParameter(default=500)
 
+    ensemble = luigi.IntParameter(default=1)
+
     def store_parts(self):
         return super().store_parts() + (
             f"mx_{self.mx}",
             f"my_{self.my}",
+            f"ensemble_{self.ensemble}",
         )
 
 
@@ -88,7 +91,7 @@ class TemplateRandomMixin:
 
 class FoldSplitRandomMixin:
 
-    fold_split_seed = luigi.IntParameter(default=1)
+    fold_split_seed = luigi.IntParameter(default=0)
 
     def store_parts(self):
         return super().store_parts() + (f"fold_split_seed_{self.fold_split_seed}",)
@@ -97,7 +100,7 @@ class FoldSplitRandomMixin:
 class FoldSplitUncertaintyMixin:
 
     # controls how many times we split the data for uncertainty estimation
-    fold_split_num = luigi.IntParameter(default=4)
+    fold_split_num = luigi.IntParameter(default=5)
 
     def store_parts(self):
         return super().store_parts() + (f"fold_split_num_{self.fold_split_num}",)

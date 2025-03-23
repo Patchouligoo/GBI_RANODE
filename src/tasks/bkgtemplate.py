@@ -24,7 +24,7 @@ from src.utils.law import (
 from src.tasks.preprocessing import PreprocessingFold, ProcessBkg
 
 
-class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
+class BkgTemplateTraining(TemplateRandomMixin, BaseTask):
     device = luigi.Parameter(default="cuda")
     batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=200)
@@ -132,7 +132,6 @@ class BkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
 
 class BkgTemplateChecking(
     BkgTemplateUncertaintyMixin,
-    ProcessMixin,
     BaseTask,
 ):
 
@@ -243,7 +242,7 @@ class BkgTemplateChecking(
 
 
 # --------------------------------- Ideal Bkg Model ---------------------------------
-class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
+class PerfectBkgTemplateTraining(TemplateRandomMixin, BaseTask):
     device = luigi.Parameter(default="cuda")
     batchsize = luigi.IntParameter(default=2048)
     epochs = luigi.IntParameter(default=200)
@@ -270,15 +269,15 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, ProcessMixin, BaseTask):
         # "data_val_CR": self.local_target("data_val_cr.npy"),
 
         # load bkg in SR but no label
-        data_train_SR = np.load(self.input()["SR_data_train_model_B"].path)
-        data_val_SR = np.load(self.input()["SR_data_val_model_B"].path)
+        data_trainval_SR = np.load(self.input()["SR_data_trainval_model_B"].path)
         data_test_SR = np.load(self.input()["SR_data_test_model_B"].path)
-        assert data_train_SR[:, -1].sum() == 0, "data_train_SR should have no signal"
-        assert data_val_SR[:, -1].sum() == 0, "data_val_SR should have no signal"
+        assert (
+            data_trainval_SR[:, -1].sum() == 0
+        ), "data_trainval_SR should have no signal"
         assert data_test_SR[:, -1].sum() == 0, "data_test_SR should have no signal"
 
         # combine all data and resplit into train and val
-        data_all = np.concatenate([data_train_SR, data_val_SR, data_test_SR], axis=0)
+        data_all = np.concatenate([data_trainval_SR, data_test_SR], axis=0)
         data_train_SR, data_val_SR = train_test_split(
             data_all, test_size=0.2, random_state=self.train_random_seed
         )
@@ -395,8 +394,7 @@ class PredictBkgProb(
 
     def output(self):
         return {
-            "log_B_train": self.local_target("log_B_train.npy"),
-            "log_B_val": self.local_target("log_B_val.npy"),
+            "log_B_trainval": self.local_target("log_B_trainval.npy"),
             "log_B_test": self.local_target("log_B_test.npy"),
         }
 
@@ -418,17 +416,10 @@ class PredictBkgProb(
             model_Bs.append(model_B)
 
         # load the sample to compare with
-        data_train_SR_B = np.load(
-            self.input()["preprocessed_data"]["SR_data_train_model_B"].path
+        data_trainval_SR_B = np.load(
+            self.input()["preprocessed_data"]["SR_data_trainval_model_B"].path
         )
-        traintensor_SR_B = torch.from_numpy(data_train_SR_B.astype("float32")).to(
-            self.device
-        )
-
-        data_val_SR_B = np.load(
-            self.input()["preprocessed_data"]["SR_data_val_model_B"].path
-        )
-        valtensor_SR_B = torch.from_numpy(data_val_SR_B.astype("float32")).to(
+        trainvaltensor_SR_B = torch.from_numpy(data_trainval_SR_B.astype("float32")).to(
             self.device
         )
 
@@ -440,26 +431,17 @@ class PredictBkgProb(
         )
 
         # get avg probility of 10 models
-        log_B_train_list = []
-        log_B_val_list = []
+        log_B_trainval_list = []
         log_B_test_list = []
         for model_B in model_Bs:
             with torch.no_grad():
-                log_B_train = model_B.model.log_probs(
-                    inputs=traintensor_SR_B[:, 1:-1],
-                    cond_inputs=traintensor_SR_B[:, 0].reshape(-1, 1),
+                log_B_trainval = model_B.model.log_probs(
+                    inputs=trainvaltensor_SR_B[:, 1:-1],
+                    cond_inputs=trainvaltensor_SR_B[:, 0].reshape(-1, 1),
                 )
                 # set all nans to 0
-                log_B_train[torch.isnan(log_B_train)] = 0
-                log_B_train_list.append(log_B_train.cpu().numpy())
-
-                log_B_val = model_B.model.log_probs(
-                    inputs=valtensor_SR_B[:, 1:-1],
-                    cond_inputs=valtensor_SR_B[:, 0].reshape(-1, 1),
-                )
-                # set all nans to 0
-                log_B_val[torch.isnan(log_B_val)] = 0
-                log_B_val_list.append(log_B_val.cpu().numpy())
+                log_B_trainval[torch.isnan(log_B_trainval)] = 0
+                log_B_trainval_list.append(log_B_trainval.cpu().numpy())
 
                 log_B_test = model_B.model.log_probs(
                     inputs=testtensor_SR_B[:, 1:-1],
@@ -470,19 +452,14 @@ class PredictBkgProb(
                 log_B_test_list.append
                 log_B_test_list.append(log_B_test.cpu().numpy())
 
-        log_B_train = np.array(log_B_train_list)
-        B_train = np.exp(log_B_train).mean(axis=0)
-        log_B_train = np.log(B_train + 1e-32)
-
-        log_B_val = np.array(log_B_val_list)
-        B_val = np.exp(log_B_val).mean(axis=0)
-        log_B_val = np.log(B_val + 1e-32)
+        log_B_trainval = np.array(log_B_trainval_list)
+        B_trainval = np.exp(log_B_trainval).mean(axis=0)
+        log_B_trainval = np.log(B_trainval + 1e-32)
 
         log_B_test = np.array(log_B_test_list)
         B_test = np.exp(log_B_test).mean(axis=0)
         log_B_test = np.log(B_test + 1e-32)
 
-        self.output()["log_B_train"].parent.touch()
-        np.save(self.output()["log_B_train"].path, log_B_train)
-        np.save(self.output()["log_B_val"].path, log_B_val)
+        self.output()["log_B_trainval"].parent.touch()
+        np.save(self.output()["log_B_trainval"].path, log_B_trainval)
         np.save(self.output()["log_B_test"].path, log_B_test)
