@@ -205,8 +205,13 @@ def bootstrap_and_fit(
 
     # ------------------------------- 95% CI of max likelihood -------------------------------
     CI95_likelihood = max_likelihood_lower_bound - np.log(2) / event_num
-    diff = y_pred_upper_bound - CI95_likelihood
-    crossings = find_zero_crossings(x_pred, diff)
+    # add y_values to y_pred_upper_bound to make sure the 95CI is more conservative
+    # and it needs to be added in where x_values are in x_pred
+    indices = np.searchsorted(x_pred, x_values.flatten())
+    y_likelihood_upper_bound = np.insert(y_pred_upper_bound, indices, y_values, axis=0)
+    x_likelihood_upper_bound = np.insert(x_pred, indices, x_values.flatten(), axis=0)
+    diff = y_likelihood_upper_bound - CI95_likelihood
+    crossings = find_zero_crossings(x_likelihood_upper_bound, diff)
     # Separate them into those on the left vs. right of the maximum
     left_crossings = [c for c in crossings if c < max_likelihood_w_log]
     right_crossings = [c for c in crossings if c > max_likelihood_w_log]
