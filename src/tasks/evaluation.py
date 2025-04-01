@@ -126,6 +126,7 @@ class ScanOverTrueMu(
                 mu_upperbound_list,
                 alpha=0.2,
                 color="red",
+                label="95% CI",
             )
             plt.plot(
                 np.linspace(0, 5, 100),
