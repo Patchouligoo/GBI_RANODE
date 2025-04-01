@@ -265,7 +265,10 @@ def bootstrap_and_fit(
 
     plt.xlabel("$log_{10}(\mu)$")
 
-    plt.ylabel("likelihood")
+    # <log likelihood>_perevent
+    plt.ylabel("$<log(L)>_{event}$")
+
+    plt.tight_layout()
 
     plt.legend()
     plt.savefig(output_dir["scan_plot"].path)

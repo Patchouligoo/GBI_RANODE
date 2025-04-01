@@ -38,7 +38,9 @@ class FittingScanResults(
 
     def output(self):
         return {
-            "scan_plot": self.local_target("scan_plot.pdf"),
+            "scan_plot": self.local_target(
+                f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
+            ),
             "peak_info": self.local_target("peak_info.json"),
         }
 
@@ -85,7 +87,7 @@ class ScanOverTrueMu(
         ]
 
     def output(self):
-        return self.local_target("scan_plot.pdf")
+        return self.local_target("full_scan.pdf")
 
     @law.decorator.safe_output
     def run(self):
