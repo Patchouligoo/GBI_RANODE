@@ -90,6 +90,11 @@ class ScanOverTrueMu(
     @law.decorator.safe_output
     def run(self):
 
+        if self.use_full_stats:
+            num_B = 738020
+        else:
+            num_B = 121980
+
         mu_true_list = []
         mu_pred_list = []
         mu_lowerbound_list = []
@@ -128,6 +133,7 @@ class ScanOverTrueMu(
                 label="true $\mu$",
                 color="black",
             )
+
             plt.xscale("log")
             plt.yscale("log")
             plt.xlim(0.008, 7)
@@ -144,7 +150,35 @@ class ScanOverTrueMu(
             ax.yaxis.get_major_formatter().set_scientific(False)
             ax.yaxis.get_major_formatter().set_useOffset(False)
 
-            plt.title("Scan over true $\mu$")
+            # Set custom ticks for primary x-axis (and similarly for y-axis)
+            x_ticks = np.array([0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1, 5])
+            ax.set_xticks(x_ticks)
+            ax.set_yticks(x_ticks)
+
+            # Define the transformation factor and functions
+            factor = 0.01 * num_B / np.sqrt(num_B)
+
+            def forward(x):
+                return x * factor
+
+            def inverse(x):
+                return x / factor
+
+            # Create a secondary x-axis on the top using the transformation functions
+            ax2 = ax.secondary_xaxis("top", functions=(forward, inverse))
+            ax2.set_xscale("log")
+            top_ticks = forward(x_ticks)  # i.e. x_ticks * factor
+            ax2.set_xticks(top_ticks)
+
+            bottom_minor_ticks = ax.xaxis.get_minorticklocs()
+            top_minor_ticks = forward(bottom_minor_ticks)
+            ax2.set_xticks(top_minor_ticks, minor=True)
+
+            ax2.set_xlabel("$S/\\sqrt{B}$")
+            ax2.xaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax2.xaxis.get_major_formatter().set_scientific(False)
+            ax2.xaxis.get_major_formatter().set_useOffset(False)
+
             plt.legend()
             pdf.savefig(f)
             plt.close(f)
