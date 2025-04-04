@@ -177,6 +177,12 @@ def train_model_S(
     print("best model val loss: ", min_val_loss)
     torch.save(best_model, output_dir["sig_model"].path)
 
+    try:
+        loaded_state_dict = torch.load(output_dir["sig_model"].path, map_location="cpu")
+        model_S.load_state_dict(loaded_state_dict)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load state dict into model_S from {output_dir['sig_model'].path}: {e}")
+
     # save metadata
     metadata = {
         "w_true": s_ratio,
@@ -188,6 +194,17 @@ def train_model_S(
 
     with open(output_dir["metadata"].path, "w") as f:
         json.dump(metadata, f, cls=NumpyEncoder)
+
+    # load the metadata again to make sure it exist, otherwise throw an error
+    try:
+        with open(output_dir["metadata"].path, "r") as f:
+            loaded_metadata = json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load metadata from {output_dir['metadata'].path}: {e}")
+    
+    # Optionally, you can further check if loaded_metadata meets expected criteria
+    if not loaded_metadata:
+        raise ValueError("Loaded metadata is empty, which is unexpected.")
 
 
 def pred_model_S(model_dir, data_train_SR_S, device="cuda"):
