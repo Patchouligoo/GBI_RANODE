@@ -1,6 +1,6 @@
 import os
 import subprocess
-
+import numpy as np
 import luigi
 import law
 import pandas as pd
@@ -79,8 +79,9 @@ class SignalStrengthMixin:
         return conversion[self.s_ratio_index]
 
     def store_parts(self):
+        round_s_ratio = np.round(self.s_ratio, 6)
         return super().store_parts() + (
-            f"s_index_{self.s_ratio_index}_ratio_{str_encode_value(self.s_ratio)}",
+            f"s_index_{self.s_ratio_index}_ratio_{str_encode_value(round_s_ratio)}",
         )
 
 
@@ -146,5 +147,15 @@ class WScanMixin:
 
     def store_parts(self):
         return super().store_parts() + (
-            f"w_min_{self.w_min}_w_max_{self.w_max}_scan_{self.scan_number}",
+            f"w_min_{str_encode_value(self.w_min)}_w_max_{str_encode_value(self.w_max)}_scan_{self.scan_number}",
         )
+
+    @property
+    def w_range(self):
+        w_range = np.logspace(
+            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
+        )
+
+        # round to 6 decimal places
+        w_range = np.round(w_range, 6)
+        return w_range

@@ -39,7 +39,7 @@ class RNodeTemplate(
     early_stopping_patience = luigi.IntParameter(default=10)
 
     def store_parts(self):
-        w_value = str(self.w_value)
+        w_value = str_encode_value(self.w_value)
         return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
@@ -107,14 +107,11 @@ class ScanRANODEFixedSeed(
     def requires(self):
 
         model_list = {}
-        w_range = np.logspace(
-            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
-        )
 
         for index in range(self.scan_number):
             model_list[f"model_{index}"] = RNodeTemplate.req(
                 self,
-                w_value=w_range[index],
+                w_value=self.w_range[index],
                 train_random_seed=self.train_random_seed,
             )
 
@@ -127,11 +124,6 @@ class ScanRANODEFixedSeed(
 
     @law.decorator.safe_output
     def run(self):
-
-        w_range = np.logspace(
-            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
-        )
-        w_range_log = np.log10(w_range)
 
         val_loss_scan = []
         model_path_list_scan = {}
@@ -152,7 +144,7 @@ class ScanRANODEFixedSeed(
         val_loss_scan = np.array(val_loss_scan)
         val_loss_scan = -1 * val_loss_scan.flatten()
 
-        print(w_range)
+        print(self.w_range)
         print(val_loss_scan)
 
         self.output()["model_list"].parent.touch()
@@ -197,10 +189,6 @@ class ScanRANODE(
 
         from src.models.ranode_pred import ranode_pred
 
-        w_scan_list = np.logspace(
-            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
-        )
-
         prob_S_list = []
 
         # for each w test value
@@ -208,7 +196,7 @@ class ScanRANODE(
 
             prob_S_list_w = []
 
-            w_value = w_scan_list[w_index]
+            w_value = self.w_range[w_index]
             print(f" - evaluating scan index {w_index}, w value {w_value}")
 
             # for each random seed, load the model, evaluate the model on test data, and save the prob_S

@@ -50,9 +50,7 @@ class FittingScanResults(
         # load scan results
         prob_S_scan = np.load(self.input()["prob_S_scan"].path)
         prob_B_scan = np.load(self.input()["prob_B_scan"].path)
-        w_scan_range = np.logspace(
-            np.log10(self.w_min), np.log10(self.w_max), self.scan_number
-        )
+        w_scan_range = self.w_range
         w_true = self.s_ratio
 
         from src.fitting.fitting import bootstrap_and_fit
