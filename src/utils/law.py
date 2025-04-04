@@ -122,9 +122,12 @@ class BkgModelMixin:
 
     use_perfect_bkg_model = luigi.BoolParameter(default=False)
 
+    use_bkg_model_gen_data = luigi.BoolParameter(default=False)
+
     def store_parts(self):
         return super().store_parts() + (
             f"use_perfect_bkg_model_{self.use_perfect_bkg_model}",
+            f"use_bkg_model_gen_data_{self.use_bkg_model_gen_data}",
         )
 
 

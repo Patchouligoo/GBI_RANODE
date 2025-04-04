@@ -20,6 +20,7 @@ from src.utils.law import (
 from src.tasks.preprocessing import PreprocessingFold
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
+from src.tasks.bkgsampling import PredictBkgProbGen, PreprocessingFoldwModelBGen
 
 
 class RNodeTemplate(
@@ -43,10 +44,17 @@ class RNodeTemplate(
         return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
-        return {
-            "preprocessed_data": PreprocessingFold.req(self),
-            "bkgprob": PredictBkgProb.req(self),
-        }
+
+        if self.use_bkg_model_gen_data:
+            return {
+                "preprocessed_data": PreprocessingFoldwModelBGen.req(self),
+                "bkgprob": PredictBkgProbGen.req(self),
+            }
+        else:
+            return {
+                "preprocessed_data": PreprocessingFold.req(self),
+                "bkgprob": PredictBkgProb.req(self),
+            }
 
     def output(self):
         return {
@@ -172,11 +180,18 @@ class ScanRANODE(
                 self, train_random_seed=index
             )
 
-        return {
-            "model_S_scan_result": model_results,
-            "data": PreprocessingFold.req(self),
-            "bkgprob": PredictBkgProb.req(self),
-        }
+        if self.use_bkg_model_gen_data:
+            return {
+                "model_S_scan_result": model_results,
+                "data": PreprocessingFoldwModelBGen.req(self),
+                "bkgprob": PredictBkgProbGen.req(self),
+            }
+        else:
+            return {
+                "model_S_scan_result": model_results,
+                "data": PreprocessingFold.req(self),
+                "bkgprob": PredictBkgProb.req(self),
+            }
 
     def output(self):
         return {
