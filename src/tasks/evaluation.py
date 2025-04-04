@@ -7,232 +7,179 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.ticker as mticker
 
 from src.utils.law import (
-    BaseTask, 
-    SignalStrengthMixin, 
-    TranvalSplitRandomMixin, 
-    TemplateRandomMixin, 
-    TranvalSplitUncertaintyMixin, 
-    SigTemplateTrainingUncertaintyMixin, 
+    BaseTask,
+    SignalStrengthMixin,
+    FoldSplitRandomMixin,
+    FoldSplitUncertaintyMixin,
+    TemplateRandomMixin,
+    SigTemplateTrainingUncertaintyMixin,
     ProcessMixin,
-    TestSetMixin,
+    BkgModelMixin,
     WScanMixin,
 )
-from src.tasks.preprocessing import PreprocessingTrainval, PreprocessingTest
-from src.tasks.bkgtemplate import PredictBkgProbTrainVal, PredictBkgProbTest
+from src.tasks.preprocessing import PreprocessingFold
+from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
-from src.tasks.rnodetemplate import CoarseScanRANODEoverW, RNodeTemplate
+from src.tasks.rnodetemplate import (
+    ScanRANODE,
+    RNodeTemplate,
+)
 
 
 class FittingScanResults(
-    CoarseScanRANODEoverW,
+    ScanRANODE,
 ):
 
     def requires(self):
-        return CoarseScanRANODEoverW.req(self)
-    
+        return ScanRANODE.req(self)
+
     def output(self):
         return {
-            "scan_plot": self.local_target("scan_plot.pdf"),
+            "scan_plot": self.local_target(
+                f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
+            ),
             "peak_info": self.local_target("peak_info.json"),
         }
-    
+
     @law.decorator.safe_output
     def run(self):
 
         # load scan results
         prob_S_scan = np.load(self.input()["prob_S_scan"].path)
         prob_B_scan = np.load(self.input()["prob_B_scan"].path)
-        w_scan_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+        w_scan_range = self.w_range
         w_true = self.s_ratio
 
         from src.fitting.fitting import bootstrap_and_fit
 
         self.output()["scan_plot"].parent.touch()
-        output_dir = self.output()["scan_plot"].path
+        output_dir = self.output()
         bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
 
 
-# class PerformanceEvaluation(
-#     CoarseScanRANODEoverW,
-# ):
-    
-#     num_fine_scan = luigi.IntParameter(default=10)
-#     device = luigi.Parameter(default="cuda")
-    
-#     def requires(self):
+class ScanOverTrueMu(
+    BkgModelMixin,
+    ProcessMixin,
+    BaseTask,
+):
 
-#         model_list = {}
-#         w_range = np.logspace(np.log10(self.w_min), np.log10(self.w_max), self.scan_number)
+    scan_index = luigi.ListParameter(
+        default=[
+            0,  # 0
+            5,  # 0.10%
+            7,  # 0.30%
+            8,  # 0.53%
+            9,  # 0.93%
+            11,  # 2.85%
+            12,  # 5.01%
+        ]
+    )
 
-#         for fine_scan_index in range(self.num_fine_scan):
-#             model_list[f"model_{fine_scan_index}"] = [RNodeTemplate.req(self, w_value=w_range[fine_scan_index], train_random_seed=(i)) for i in range(self.num_sig_templates)]
+    def requires(self):
+        return [
+            FittingScanResults.req(self, s_ratio_index=index)
+            for index in self.scan_index
+        ]
 
-#         return {
-#             "models": model_list,
-#             "scan_result": CoarseScanRANODEoverW.req(self),
-#             "test_data": Preprocessing.req(self),
-#             "bkgprob": PredictBkgProb.req(self),
-#         }
+    def output(self):
+        return self.local_target("full_scan.pdf")
 
-#     def output(self):
-#         return {
-#             "performance_plot": self.local_target("performance_plot.pdf"),
-#             "sic_values": self.local_target("sic_values.json"),
-#         }
-    
-#     @law.decorator.safe_output
-#     def run(self):
+    @law.decorator.safe_output
+    def run(self):
 
-#         # load the best models
-#         with open(self.input()["scan_result"]["peak_info"].path, 'r') as f:
-#             scan_result = json.load(f)
+        if self.use_full_stats:
+            num_B = 738020
+        else:
+            num_B = 121980
 
-#         best_model_index = scan_result["mu_best_index"]
+        mu_true_list = []
+        mu_pred_list = []
+        mu_lowerbound_list = []
+        mu_upperbound_list = []
 
-#         model_best_list = []
-#         model_loss_list = []
+        for index in range(len(self.scan_index)):
+            with open(self.input()[index]["peak_info"].path, "r") as f:
+                peak_info = json.load(f)
 
-#         for rand_seed_index in range(self.num_sig_templates):
-#             model_best_seed_i = self.input()["models"][f"model_{best_model_index}"][rand_seed_index]["sig_models"]
-#             metadata_best_seed_i = self.input()["models"][f"model_{best_model_index}"][rand_seed_index]["metadata"].load()
+            mu_true = peak_info["mu_true"] * 100
+            mu_pred = peak_info["mu_pred"] * 100
+            mu_lowerbound = peak_info["left_CI"] * 100
+            mu_upperbound = peak_info["right_CI"] * 100
 
-#             for model in model_best_seed_i:
-#                 model_best_list.append(model.path)
-#             model_loss_list.extend(metadata_best_seed_i["min_val_loss_list"])
+            mu_true_list.append(mu_true)
+            mu_pred_list.append(mu_pred)
+            mu_lowerbound_list.append(mu_lowerbound)
+            mu_upperbound_list.append(mu_upperbound)
 
-#         # select 20 best models
-#         # model_loss_list = np.array(model_loss_list)
-#         # model_loss_list = np.sort(model_loss_list)[:20]
-#         # model_best_list = model_best_list[:20]
+        # plot
+        self.output().parent.touch()
+        with PdfPages(self.output().path) as pdf:
+            f = plt.figure()
+            plt.plot(mu_true_list, mu_pred_list, color="red")
+            plt.scatter(mu_true_list, mu_pred_list, label="pred $\mu$", color="red")
+            plt.fill_between(
+                mu_true_list,
+                mu_lowerbound_list,
+                mu_upperbound_list,
+                alpha=0.2,
+                color="red",
+                label="95% CI",
+            )
+            plt.plot(
+                np.linspace(0, 5, 100),
+                np.linspace(0, 5, 100),
+                label="true $\mu$",
+                color="black",
+            )
 
-#         # load test data
-#         data_test_SR_model_S = np.load(self.input()['test_data']['data_test_SR_model_S'].path)
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.xlim(0.008, 7)
+            plt.ylim(0.008, 7)
+            plt.xlabel("$\mu$ (%)")
+            plt.ylabel("$\mu$ (%)")
 
-#         # load bkg prob
-#         data_test_SR_prob_B = np.load(self.input()['bkgprob']['log_B_test'].path)
-#         data_test_SR_prob_B = np.exp(data_test_SR_prob_B.flatten())
+            # set x and y axis to be non-scientific
+            ax = plt.gca()
+            ax.xaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax.xaxis.get_major_formatter().set_scientific(False)
+            ax.xaxis.get_major_formatter().set_useOffset(False)
+            ax.yaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax.yaxis.get_major_formatter().set_scientific(False)
+            ax.yaxis.get_major_formatter().set_useOffset(False)
 
-#         from src.models.train_model_S import pred_model_S
+            # Set custom ticks for primary x-axis (and similarly for y-axis)
+            x_ticks = np.array([0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1, 5])
+            ax.set_xticks(x_ticks)
+            ax.set_yticks(x_ticks)
 
-#         prob_S_list = []
+            # Define the transformation factor and functions
+            factor = 0.01 * num_B / np.sqrt(num_B)
 
-#         for model_index, model_dir in enumerate(model_best_list):
-#             print(f"evaluating model {model_index}")
-#             prob_S = pred_model_S(model_dir, data_test_SR_model_S, batch_size=2048, device=self.device)
-#             prob_S_list.append(prob_S)
+            def forward(x):
+                return x * factor
 
-#         prob_S_list = np.array(prob_S_list)
-#         prob_S_list = np.mean(prob_S_list, axis=0)
+            def inverse(x):
+                return x / factor
 
-#         prob_anomaly = prob_S_list / (1e-10 + data_test_SR_prob_B) + 1e-10
-#         prob_anomaly = np.log(prob_anomaly)
-#         # adjust to 0-1
-#         prob_anomaly = (prob_anomaly - prob_anomaly.min()) / (prob_anomaly.max() - prob_anomaly.min())
+            # Create a secondary x-axis on the top using the transformation functions
+            ax2 = ax.secondary_xaxis("top", functions=(forward, inverse))
+            ax2.set_xscale("log")
+            top_ticks = forward(x_ticks)  # i.e. x_ticks * factor
+            ax2.set_xticks(top_ticks)
 
-#         truth_label = data_test_SR_model_S[:, -1].flatten()
+            bottom_minor_ticks = ax.xaxis.get_minorticklocs()
+            top_minor_ticks = forward(bottom_minor_ticks)
+            ax2.set_xticks(top_minor_ticks, minor=True)
 
-#         from sklearn.metrics import roc_curve, roc_auc_score
+            ax2.set_xlabel("$S/\\sqrt{B}$")
+            ax2.xaxis.set_major_formatter(mticker.ScalarFormatter())
+            ax2.xaxis.get_major_formatter().set_scientific(False)
+            ax2.xaxis.get_major_formatter().set_useOffset(False)
 
-#         fpr, tpr, _ = roc_curve(truth_label, prob_anomaly)
-#         sic = tpr / np.sqrt(fpr)
-
-#         # fine sic curve at fpr = 0.001
-#         arg_fpr = np.argmin(np.abs(fpr - 0.001))
-#         sic_value = sic[arg_fpr]
-
-#         self.output()["performance_plot"].parent.touch()
-
-#         with PdfPages(self.output()["performance_plot"].path) as pdf:
-#             bins=np.linspace(0, 1, 100)
-#             f = plt.figure()
-#             plt.hist(prob_anomaly[truth_label == 0], bins=bins, label='bkg', density=True, histtype='step', lw=3)
-#             plt.hist(prob_anomaly[truth_label == 1], bins=bins, label='sig', density=True, histtype='step', lw=3)
-#             plt.xlabel('anomaly score')
-#             plt.ylabel('num events')
-#             plt.title('Anomaly score distribution')
-#             plt.legend()
-#             plt.yscale('log')
-#             pdf.savefig(f)
-#             plt.close(f)
-
-#             f = plt.figure()
-#             plt.plot(tpr, sic, label='SIC')
-#             plt.xlabel('TPR')
-#             plt.ylabel('SIC')
-#             plt.title('SIC vs TPR')
-#             plt.legend()
-#             pdf.savefig(f)
-#             plt.close(f)
-
-#         with open(self.output()["sic_values"].path, 'w') as f:
-#             json.dump({"sic_value_fpr001": sic_value}, f, cls=NumpyEncoder)
-
-
-# # class ScanOverTruthMu(
-# #     FineScanRANODEoverW,
-# # ):
-    
-# #     def requires(self):
-# #         truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
-    
-# #         return {
-# #             "fine_scan_result": [FineScanRANODEoverW.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
-# #             "sic_result": [PerformanceEvaluation.req(self, s_ratio=truth_mu) for truth_mu in truth_mu_scan_list],
-# #         }
-    
-# #     def output(self):
-# #         return self.local_target("scan_plot.pdf")
-    
-# #     @law.decorator.safe_output
-# #     def run(self):
-
-# #         truth_mu_scan_list = [0.0005, 0.001, 0.005, 0.01]
-
-# #         mu_pred_list = []
-# #         mu_lowerbound_list = []
-# #         mu_upperbound_list = []
-# #         sic_values = []
-
-# #         for index, truth_mu in enumerate(truth_mu_scan_list):
-
-# #             fine_scan_result = json.load(open(self.input()["fine_scan_result"][index]["scan_result"].path, 'r'))
-# #             sic_value = json.load(open(self.input()["sic_result"][index]["sic_values"].path, 'r'))["sic_value_fpr001"]
-
-# #             mu_pred_i = fine_scan_result["mu_pred"]
-# #             mu_lowerbound_i = fine_scan_result["mu_lowerbound"]
-# #             mu_upperbound_i = fine_scan_result["mu_upperbound"]
-
-# #             mu_pred_list.append(mu_pred_i)
-# #             mu_lowerbound_list.append(mu_lowerbound_i)
-# #             mu_upperbound_list.append(mu_upperbound_i)
-# #             sic_values.append(sic_value)
-
-# #         # plot
-# #         with PdfPages(self.output().path) as pdf:
-# #             f = plt.figure()
-# #             plt.plot(truth_mu_scan_list, mu_pred_list, label='pred $\mu$', color='red')
-# #             plt.fill_between(truth_mu_scan_list, mu_lowerbound_list, mu_upperbound_list, alpha=0.2, color='red')
-# #             plt.plot(truth_mu_scan_list, truth_mu_scan_list, label='true $\mu$', color='black')
-# #             plt.xlabel('true $\mu$')
-# #             plt.ylabel('pred $\mu$')
-# #             plt.xscale('log')
-# #             plt.yscale('log')
-# #             plt.title('Scan over truth $\mu$')
-# #             plt.legend()
-# #             pdf.savefig(f)
-# #             plt.close(f)
-
-# #             f = plt.figure()
-# #             plt.plot(truth_mu_scan_list, sic_values, label='SIC', color='red')
-# #             plt.xlabel('true $\mu$')
-# #             plt.ylabel('SIC')
-# #             plt.xscale('log')
-# #             plt.title('SIC vs true $\mu$')
-# #             plt.legend()
-# #             pdf.savefig(f)
-# #             plt.close(f)
-
-        
-
+            plt.legend()
+            pdf.savefig(f)
+            plt.close(f)

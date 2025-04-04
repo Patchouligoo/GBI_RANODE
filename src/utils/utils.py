@@ -50,3 +50,26 @@ def str_encode_value(val:float, n_digit=None, formatted=True):
     if formatted:
         val_str = val_str.replace('.', 'p').replace('-', 'n')
     return val_str
+
+
+def find_zero_crossings(x, y):
+    """
+    Returns a list of x-values where y crosses zero, 
+    using linear interpolation between data points.
+    """
+    crossings = []
+    for i in range(len(y) - 1):
+        y0, y1 = y[i], y[i+1]
+        if y0 == 0:
+            # Exactly zero at i
+            crossings.append(x[i])
+        elif y1 == 0:
+            # Exactly zero at i+1
+            crossings.append(x[i+1])
+        elif y0 * y1 < 0:
+            # There's a sign change between i and i+1
+            # Do a linear interpolation for a better estimate
+            x0, x1 = x[i], x[i+1]
+            crossing_x = x0 - y0 * (x1 - x0) / (y1 - y0)
+            crossings.append(crossing_x)
+    return crossings
