@@ -184,3 +184,57 @@ class ScanOverTrueMu(
             plt.legend()
             pdf.savefig(f)
             plt.close(f)
+
+
+class FittingScanResultsCrossFolds(
+    SigTemplateTrainingUncertaintyMixin,
+    FoldSplitUncertaintyMixin,
+    BkgModelMixin,
+    WScanMixin,
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+
+    def requires(self):
+        return [
+            ScanRANODE.req(self, fold_split_seed=index)
+            for index in range(self.fold_split_num)
+        ]
+
+    def output(self):
+        return {
+            "scan_plot": self.local_target(
+                f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
+            ),
+            "peak_info": self.local_target("peak_info.json"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+
+        # load scan results
+        for index in range(self.fold_split_num):
+            if index == 0:
+                prob_S_scan = np.load(self.input()[index]["prob_S_scan"].path)
+                prob_B_scan = np.load(self.input()[index]["prob_B_scan"].path)
+            else:
+                prob_S_scan = np.concatenate(
+                    (prob_S_scan, np.load(self.input()[index]["prob_S_scan"].path)),
+                    axis=-1,
+                )
+                prob_B_scan = np.concatenate(
+                    (prob_B_scan, np.load(self.input()[index]["prob_B_scan"].path)),
+                    axis=-1,
+                )
+        prob_S_scan = np.array(prob_S_scan)
+        prob_B_scan = np.array(prob_B_scan)
+
+        w_scan_range = self.w_range
+        w_true = self.s_ratio
+
+        from src.fitting.fitting import bootstrap_and_fit
+
+        self.output()["scan_plot"].parent.touch()
+        output_dir = self.output()
+        bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
