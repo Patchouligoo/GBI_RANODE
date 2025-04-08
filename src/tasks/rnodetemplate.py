@@ -137,7 +137,7 @@ class ScanRANODEFixedSeed(
         model_path_list_scan = {}
 
         for index_w in range(self.scan_number):
-
+            print(self.input()[f"model_{index_w}"]["metadata"].path)
             # save min val loss
             metadata_w = self.input()[f"model_{index_w}"]["metadata"].load()
             min_val_loss = metadata_w["min_val_loss_list"]
@@ -228,6 +228,7 @@ class ScanRANODE(
                     f"model_seed_{index}"
                 ]["model_list"].path
 
+                print(model_list_path)
                 with open(model_list_path, "r") as f:
                     model_scan_dict = json.load(f)
 

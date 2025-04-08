@@ -38,6 +38,7 @@ def ranode_pred(model_S_list, test_data_dict, bkg_prob_dir):
     prob_S_list = []
     # make prediction using all models S in the list
     for model_S_i in model_S_list:
+        print(model_S_i)
         prob_S_i = pred_model_S(model_S_i, data_test_SR_S)
         prob_S_list.append(prob_S_i)
 
