@@ -172,9 +172,9 @@ class ScanOverTrueMu(
             top_ticks = forward(x_ticks)  # i.e. x_ticks * factor
             ax2.set_xticks(top_ticks)
 
-            bottom_minor_ticks = ax.xaxis.get_minorticklocs()
-            top_minor_ticks = forward(bottom_minor_ticks)
-            ax2.set_xticks(top_minor_ticks, minor=True)
+            # bottom_minor_ticks = ax.xaxis.get_minorticklocs()
+            # top_minor_ticks = forward(bottom_minor_ticks)
+            # ax2.set_xticks(top_minor_ticks, minor=True)
 
             ax2.set_xlabel("$S/\\sqrt{B}$")
             ax2.xaxis.set_major_formatter(mticker.ScalarFormatter())
