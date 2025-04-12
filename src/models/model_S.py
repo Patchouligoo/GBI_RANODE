@@ -15,9 +15,13 @@ from nflows.transforms.base import CompositeTransform
 from nflows.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform
 from nflows.transforms.permutations import RandomPermutation
 
+# def flows_model_RQS(num_layers = 6, num_features=4, num_blocks = 2, 
+#                 hidden_features = 64, device = 'cpu',
+#                 context_features = 1, random_mask = True, 
+#                 use_batch_norm = True, dropout_probability = 0.2):
 
-def flows_model_RQS(num_layers = 6, num_features=4, num_blocks = 2, 
-                hidden_features = 64, device = 'cpu',
+def flows_model_RQS(num_layers = 2, num_features=4, num_blocks = 2, 
+                hidden_features = 32, device = 'cpu',
                 context_features = 1, random_mask = True, 
                 use_batch_norm = True, dropout_probability = 0.2):
     
