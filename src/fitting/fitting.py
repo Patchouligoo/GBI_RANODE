@@ -223,6 +223,11 @@ def bootstrap_and_fit(
     mu_left = 10**x_left if x_left is not None else 0
     mu_right = 10**x_right if x_right is not None else 1
 
+    # if at the leftmost point we have y_likelihood_upper_bound > CI95_likelihood
+    # then we need to set mu_left to 0
+    if y_likelihood_upper_bound[0] > CI95_likelihood:
+        mu_left = 0
+
     # make plots
     f = plt.figure()
 
