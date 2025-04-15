@@ -249,7 +249,7 @@ class PerfectBkgTemplateTraining(TemplateRandomMixin, BaseTask):
     early_stopping_patience = luigi.IntParameter(default=20)
 
     def requires(self):
-        return PreprocessingFold.req(self, s_ratio_index=0)
+        return PreprocessingFold.req(self, s_ratio_index=0, use_full_stats=True)
 
     def output(self):
         return {
