@@ -62,27 +62,19 @@ class SignalGeneration(
 
         return {
             "model_S_scan_result": model_results,
-            "bkg": ProcessBkg.req(self),
-            "real_sig": ProcessSignal.req(self),
+            "preprocessing_params": ProcessBkg.req(self),
         }
 
     def output(self):
-        return self.local_target("generated_signals_comparison.pdf")
+        return self.local_target("generated_signals.npy")
 
     @law.decorator.safe_output
     def run(self):
-        # first load bkg events and preprocessing parameters
-        bkg_file = self.input()["bkg"]["SR_bkg"].path
-        bkg_events = np.load(bkg_file)
-        num_bkg_events = bkg_events.shape[0]
+
         # load the preprocessing parameters
         pre_parameters = json.load(
-            open(self.input()["bkg"]["pre_parameters"].path, "r")
+            open(self.input()["preprocessing_params"]["pre_parameters"].path, "r")
         )
-        # load the real signal events
-        real_sig_file = self.input()["real_sig"]["signals"].path
-        real_sig_events = np.load(real_sig_file)
-        num_sig_events = real_sig_events.shape[0]
 
         # ------------------- generate the signal events -------------------
         # load models
@@ -132,45 +124,63 @@ class SignalGeneration(
         # for mass, need to add 3.5 to generated signals due to preprocessing procedure
         generated_events[:, 0] += 3.5
 
-        # make plots
-        feature_list = ["mjj", "mjmin", "mjmax - mjmin", "tau21min", "tau21max"]
+        # ------------------- save the generated events -------------------
         self.output().parent.touch()
-        with PdfPages(self.output().path) as pdf:
-            for i in range(len(generated_events[0]) - 1):
-                f = plt.figure(figsize=(10, 6))
-                bins = np.linspace(
-                    np.min(bkg_events[:, i]), np.max(bkg_events[:, i]), 100
-                )
-                plt.hist(
-                    bkg_events[:, i],
-                    bins=bins,
-                    density=True,
-                    label="bkg",
-                    histtype="step",
-                    color="black",
-                )
-                plt.hist(
-                    generated_events[:, i],
-                    bins=bins,
-                    density=True,
-                    label="generated sig",
-                    histtype="step",
-                    lw=3,
-                    color="red",
-                )
-                plt.hist(
-                    real_sig_events[:, i],
-                    bins=bins,
-                    density=True,
-                    label="real sig",
-                    histtype="step",
-                    color="blue",
-                )
-                plt.xlabel(f"{feature_list[i]}")
-                plt.ylabel("density")
-                plt.legend()
-                plt.title(
-                    f"True mu = {self.s_ratio} \nmu_test={self.w_range[self.w_test_index]}"
-                )
-                pdf.savefig(f)
-                plt.close(f)
+        np.save(self.output().path, generated_events)
+
+
+class SignalGenerationPlot(SignalGeneration):
+
+    def requires(self):
+        return {
+            "generated_signals": SignalGeneration.req(self),
+            "bkg_events": ProcessBkg.req(self),
+            "real_sig": ProcessSignal.req(self),
+        }
+
+    def output(self):
+        return self.local_target("comparison_plots.pdf")
+
+    @law.decorator.safe_output
+    def run(self):
+        feature_list = ["mjj", "mjmin", "mjmax - mjmin", "tau21min", "tau21max"]
+
+        # load bkg events
+        bkg_file = self.input()["bkg_events"]["SR_bkg"].path
+        bkg_events = np.load(bkg_file)[:, :-1]  # remove the label column
+        bkg_df = pd.DataFrame(bkg_events, columns=feature_list)
+
+        # load the real signal events
+        real_sig_file = self.input()["real_sig"]["signals"].path
+        real_sig_events = np.load(real_sig_file)[:, :-1]  # remove the label column
+        real_sig_df = pd.DataFrame(real_sig_events, columns=feature_list)
+
+        # load the generated events
+        generated_file = self.input()["generated_signals"].path
+        generated_events = np.load(generated_file)[:, :-1]  # remove the label column
+        generated_df = pd.DataFrame(generated_events, columns=feature_list)
+
+        # make plots
+        dfs = {
+            "real_signals": real_sig_df,
+            "generated_signals": generated_df,
+            "background": bkg_df,
+        }
+        metadata = {
+            "mx": self.mx,
+            "my": self.my,
+            "mu_true": self.s_ratio,
+            "numB": len(bkg_df),
+            "mu_test": self.w_range[self.w_test_index],
+            "use_full_stats": self.use_full_stats,
+            "use_perfect_modelB": self.use_perfect_bkg_model,
+            "use_modelB_genData": self.use_bkg_model_gen_data,
+            "columns": feature_list,
+        }
+        self.output().parent.touch()
+
+        from src.plotting.plotting import plot_event_feature_distribution
+
+        plot_event_feature_distribution(dfs, metadata, self.output().path)
+
+        # law run SignalGenerationPlot --version dev_smallS_10k_all --use-full-stats True --use-perfect-bkg-model True --use-bkg-model-gen-data False --s-ratio-index 7 --w-test-index 11
