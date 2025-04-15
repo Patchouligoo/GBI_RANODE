@@ -105,85 +105,52 @@ class ScanOverTrueMu(
             with open(self.input()[index]["peak_info"].path, "r") as f:
                 peak_info = json.load(f)
 
-            mu_true = peak_info["mu_true"] * 100
-            mu_pred = peak_info["mu_pred"] * 100
-            mu_lowerbound = peak_info["left_CI"] * 100
-            mu_upperbound = peak_info["right_CI"] * 100
+            mu_true = peak_info["mu_true"]
+            mu_pred = peak_info["mu_pred"]
+            mu_lowerbound = peak_info["left_CI"]
+            mu_upperbound = peak_info["right_CI"]
 
             mu_true_list.append(mu_true)
             mu_pred_list.append(mu_pred)
             mu_lowerbound_list.append(mu_lowerbound)
             mu_upperbound_list.append(mu_upperbound)
 
-        # plot
+        dfs = {
+            "true": pd.DataFrame(
+                {
+                    "x": np.array(mu_true_list),
+                    "y": np.array(mu_true_list),
+                }
+            ),
+            "predicted": pd.DataFrame(
+                {
+                    "x": np.array(mu_true_list),
+                    "y": np.array(mu_pred_list),
+                    "yerrlo": np.array(mu_lowerbound_list),
+                    "yerrhi": np.array(mu_upperbound_list),
+                }
+            ),
+        }
+
+        misc = {
+            "mx": self.mx,
+            "my": self.my,
+            "use_full_stats": self.use_full_stats,
+            "use_perfect_modelB": self.use_perfect_bkg_model,
+            "use_modelB_genData": self.use_bkg_model_gen_data,
+            "num_B": num_B,
+        }
+
         self.output().parent.touch()
-        with PdfPages(self.output().path) as pdf:
-            f = plt.figure()
-            plt.plot(mu_true_list, mu_pred_list, color="red")
-            plt.scatter(mu_true_list, mu_pred_list, label="pred $\mu$", color="red")
-            plt.fill_between(
-                mu_true_list,
-                mu_lowerbound_list,
-                mu_upperbound_list,
-                alpha=0.2,
-                color="red",
-                label="95% CI",
-            )
-            plt.plot(
-                np.linspace(0, 5, 100),
-                np.linspace(0, 5, 100),
-                label="true $\mu$",
-                color="black",
-            )
+        output_path = self.output().path
 
-            plt.xscale("log")
-            plt.yscale("log")
-            plt.xlim(0.008, 7)
-            plt.ylim(0.008, 7)
-            plt.xlabel("$\mu$ (%)")
-            plt.ylabel("$\mu$ (%)")
+        from src.plotting.plotting import plot_mu_scan_results
 
-            # set x and y axis to be non-scientific
-            ax = plt.gca()
-            ax.xaxis.set_major_formatter(mticker.ScalarFormatter())
-            ax.xaxis.get_major_formatter().set_scientific(False)
-            ax.xaxis.get_major_formatter().set_useOffset(False)
-            ax.yaxis.set_major_formatter(mticker.ScalarFormatter())
-            ax.yaxis.get_major_formatter().set_scientific(False)
-            ax.yaxis.get_major_formatter().set_useOffset(False)
-
-            # Set custom ticks for primary x-axis (and similarly for y-axis)
-            x_ticks = np.array([0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1, 5])
-            ax.set_xticks(x_ticks)
-            ax.set_yticks(x_ticks)
-
-            # Define the transformation factor and functions
-            factor = 0.01 * num_B / np.sqrt(num_B)
-
-            def forward(x):
-                return x * factor
-
-            def inverse(x):
-                return x / factor
-
-            # Create a secondary x-axis on the top using the transformation functions
-            ax2 = ax.secondary_xaxis("top", functions=(forward, inverse))
-            ax2.set_xscale("log")
-            top_ticks = forward(x_ticks)  # i.e. x_ticks * factor
-            ax2.set_xticks(top_ticks)
-
-            # bottom_minor_ticks = ax.xaxis.get_minorticklocs()
-            # top_minor_ticks = forward(bottom_minor_ticks)
-            # ax2.set_xticks(top_minor_ticks, minor=True)
-
-            ax2.set_xlabel("$S/\\sqrt{B}$")
-            ax2.xaxis.set_major_formatter(mticker.ScalarFormatter())
-            ax2.xaxis.get_major_formatter().set_scientific(False)
-            ax2.xaxis.get_major_formatter().set_useOffset(False)
-
-            plt.legend()
-            pdf.savefig(f)
-            plt.close(f)
+        plot_mu_scan_results(
+            dfs,
+            misc,
+            output_path,
+        )
 
 
 class FittingScanResultsCrossFolds(
