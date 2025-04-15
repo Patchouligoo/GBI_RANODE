@@ -86,7 +86,10 @@ class ScanOverTrueMu(
         ]
 
     def output(self):
-        return self.local_target("full_scan.pdf")
+        return {
+            "plot": self.local_target("full_scan.pdf"),
+            "plot_info": self.local_target("plot_info.json"),
+        }
 
     @law.decorator.safe_output
     def run(self):
@@ -141,8 +144,8 @@ class ScanOverTrueMu(
             "num_B": num_B,
         }
 
-        self.output().parent.touch()
-        output_path = self.output().path
+        self.output()["plot"].parent.touch()
+        output_path = self.output()["plot"].path
 
         from src.plotting.plotting import plot_mu_scan_results
 
@@ -151,6 +154,23 @@ class ScanOverTrueMu(
             misc,
             output_path,
         )
+
+        # save plot info
+        plot_info = {
+            "true": {
+                "x": mu_true_list,
+                "y": mu_true_list,
+            },
+            "predicted": {
+                "x": mu_true_list,
+                "y": mu_pred_list,
+                "yerrlo": mu_lowerbound_list,
+                "yerrhi": mu_upperbound_list,
+            },
+            "misc": misc,
+        }
+        with open(self.output()["plot_info"].path, "w") as f:
+            json.dump(plot_info, f, cls=NumpyEncoder)
 
 
 class ScanMultiModelsOverTrueMu(
