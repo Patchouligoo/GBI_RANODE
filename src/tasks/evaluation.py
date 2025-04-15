@@ -153,6 +153,128 @@ class ScanOverTrueMu(
         )
 
 
+class ScanMultiModelsOverTrueMu(
+    ProcessMixin,
+    BaseTask,
+):
+
+    scan_index = luigi.ListParameter(
+        default=[
+            0,  # 0
+            5,  # 0.10%
+            6,  # 0.17%
+            7,  # 0.30%
+            8,  # 0.53%
+            9,  # 0.93%
+            11,  # 2.85%
+            12,  # 5.01%
+        ]
+    )
+
+    def requires(self):
+        return {
+            "modelB_inSR": [
+                FittingScanResults.req(
+                    self,
+                    s_ratio_index=index,
+                    use_perfect_bkg_model=True,
+                    use_bkg_model_gen_data=False,
+                )
+                for index in self.scan_index
+            ],
+            "modelB_genData": [
+                FittingScanResults.req(
+                    self,
+                    s_ratio_index=index,
+                    use_perfect_bkg_model=False,
+                    use_bkg_model_gen_data=True,
+                )
+                for index in self.scan_index
+            ],
+            "modelB_inSB": [
+                FittingScanResults.req(
+                    self,
+                    s_ratio_index=index,
+                    use_perfect_bkg_model=False,
+                    use_bkg_model_gen_data=False,
+                )
+                for index in self.scan_index
+            ],
+        }
+
+    def output(self):
+        if self.use_full_stats:
+            return self.local_target(f"fullstats_{self.mx}_{self.my}_scan.pdf")
+        else:
+            return self.local_target(f"lumi_matched_{self.mx}_{self.my}_scan.pdf")
+
+    @law.decorator.safe_output
+    def run(self):
+
+        if self.use_full_stats:
+            num_B = 738020
+        else:
+            num_B = 121980
+
+        dfs = {}
+
+        for model in ["modelB_inSR", "modelB_genData", "modelB_inSB"]:
+
+            mu_true_list = []
+            mu_pred_list = []
+            mu_lowerbound_list = []
+            mu_upperbound_list = []
+
+            for index in range(len(self.scan_index)):
+                with open(self.input()[model][index]["peak_info"].path, "r") as f:
+                    peak_info = json.load(f)
+
+                mu_true = peak_info["mu_true"]
+                mu_pred = peak_info["mu_pred"]
+                mu_lowerbound = peak_info["left_CI"]
+                mu_upperbound = peak_info["right_CI"]
+
+                mu_true_list.append(mu_true)
+                mu_pred_list.append(mu_pred)
+                mu_lowerbound_list.append(mu_lowerbound)
+                mu_upperbound_list.append(mu_upperbound)
+
+            if "true" not in dfs:
+                dfs["true"] = pd.DataFrame(
+                    {
+                        "x": np.array(mu_true_list),
+                        "y": np.array(mu_true_list),
+                    }
+                )
+
+            dfs[model] = pd.DataFrame(
+                {
+                    "x": np.array(mu_true_list),
+                    "y": np.array(mu_pred_list),
+                    "yerrlo": np.array(mu_lowerbound_list),
+                    "yerrhi": np.array(mu_upperbound_list),
+                }
+            )
+
+        misc = {
+            "mx": self.mx,
+            "my": self.my,
+            "num_B": num_B,
+            "use_full_stats": self.use_full_stats,
+        }
+
+        self.output().parent.touch()
+        output_path = self.output().path
+
+        from src.plotting.plotting import plot_mu_scan_results_multimodels
+
+        plot_mu_scan_results_multimodels(
+            dfs,
+            misc,
+            output_path,
+        )
+
+
 class FittingScanResultsCrossFolds(
     SigTemplateTrainingUncertaintyMixin,
     FoldSplitUncertaintyMixin,
