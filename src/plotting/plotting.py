@@ -293,6 +293,7 @@ def plot_event_feature_distribution(dfs, misc, output_path):
         text += ", model B trained in CR"
 
     plotter = VariableDistributionPlot(dfs)
+    plotter.add_text(text, 0.05, 0.95, fontsize=18)
 
     with PdfPages(output_path) as pdf:
         for feature in columns:
@@ -307,8 +308,6 @@ def plot_event_feature_distribution(dfs, misc, output_path):
                 comparison_options=None,
             )
             axis.set_xlabel(feature, fontsize=18)
-
             axis.set_title(f"{feature} distribution", fontsize=18)
-            plotter.add_text(text, 0.05, 0.95, fontsize=18)
             pdf.savefig(bbox_inches="tight")
             plt.close()
