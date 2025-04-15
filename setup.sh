@@ -11,7 +11,7 @@ action() {
 
     module load python
 
-    conda activate /global/common/software/m3246/HAXAD/software/haxad3
+    conda activate /pscratch/sd/m/mukyu/SBI_RANODE/env/sbi_ranode_env
 
     echo $PYTHONPATH
 
