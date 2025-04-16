@@ -68,12 +68,13 @@ class ScanOverTrueMu(
 
     scan_index = luigi.ListParameter(
         default=[
-            0,  # 0
+            1,  # 0.01%
             5,  # 0.10%
             6,  # 0.17%
             7,  # 0.30%
             8,  # 0.53%
             9,  # 0.93%
+            10,  # 1.63%
             11,  # 2.85%
             12,  # 5.01%
         ]
