@@ -240,7 +240,7 @@ class PreprocessingFold(
         SR_data_trainval, SR_data_test = fold_splitting(
             SR_data,
             n_folds=self.fold_split_num,
-            random_seed=42,
+            random_seed=self.ensemble,
             test_fold=self.fold_split_seed,
         )
 

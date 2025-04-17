@@ -27,6 +27,7 @@ from src.utils.utils import NumpyEncoder, str_encode_value
 
 
 class SampleModelBinSR(
+    ProcessMixin,
     BaseTask,
 ):
     device = luigi.Parameter(default="cuda:0")
@@ -65,6 +66,9 @@ class SampleModelBinSR(
         )
         model_B.model.to(self.device)
         model_B.model.eval()
+
+        # fix randomness based on ensemble number
+        torch.manual_seed(self.ensemble + 100000)
 
         with torch.no_grad():
             sampled_SR_events = model_B.model.sample(
@@ -176,7 +180,7 @@ class PreprocessingFoldwModelBGen(
         SR_data_trainval, SR_data_test = fold_splitting(
             SR_data,
             n_folds=self.fold_split_num,
-            random_seed=42,
+            random_seed=self.ensemble,
             test_fold=self.fold_split_seed,
         )
 
