@@ -9,7 +9,7 @@ from scipy.stats import rv_histogram
 import torch
 import json
 from src.utils.utils import NumpyEncoder, str_encode_value
-
+import time, random
 
 def train_model_S(
     input_dir,
@@ -167,6 +167,7 @@ def train_model_S(
         scheduler.step()
 
     # save train and val loss
+    time.sleep(random.uniform(0,30))
     trainloss_list = np.array(trainloss_list)
     valloss_list = np.array(valloss_list)
     output_dir["trainloss_list"].parent.touch()
