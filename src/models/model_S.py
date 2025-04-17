@@ -129,3 +129,28 @@ def r_anode_mass_joint_untransformed(model_S,w, \
 
 
     return total_loss
+
+
+class modelSDataLoader(IterableDataset):
+    def __init__(self, data, device, batch_size):
+        super().__init__()
+        self.device = device
+        self.batch_size = batch_size
+        traintensor_S, log_B_train_tensor, train_mass_prob_B = data
+        self.traintensor_S = traintensor_S.to(device)
+        self.log_B_train_tensor = log_B_train_tensor.to(device)
+        self.train_mass_prob_B = train_mass_prob_B.to(device)
+
+    def __iter__(self):
+        num_samples = self.traintensor_S.size(0)
+        indices = torch.randperm(num_samples, device=self.device)
+        for i in range(0, num_samples - num_samples % self.batch_size, self.batch_size):
+            batch_idx = indices[i : i + self.batch_size]
+            yield (
+                self.traintensor_S[batch_idx],
+                self.log_B_train_tensor[batch_idx],
+                self.train_mass_prob_B[batch_idx],
+            )
+
+    def __len__(self):
+        return self.traintensor_S.size(0) // self.batch_size

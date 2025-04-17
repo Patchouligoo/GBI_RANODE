@@ -91,21 +91,38 @@ def train_model_S(
     print("w_true: ", s_ratio)
 
     # define training input tensors
-    train_tensor = torch.utils.data.TensorDataset(
-        traintensor_S, log_B_train_tensor, train_mass_prob_B
-    )
-    val_tensor = torch.utils.data.TensorDataset(
-        valtensor_S, log_B_val_tensor, val_mass_prob_B
-    )
+    from src.models.model_S import modelSDataLoader
 
+    traindataset = modelSDataLoader(
+        (traintensor_S, log_B_train_tensor, train_mass_prob_B),
+        device=device,
+        batch_size=batch_size,
+    )
+    valdataset = modelSDataLoader(
+        (valtensor_S, log_B_val_tensor, val_mass_prob_B),
+        device=device,
+        batch_size=batch_size,
+    )
     trainloader = torch.utils.data.DataLoader(
-        train_tensor, batch_size=batch_size, shuffle=True
+        traindataset, batch_size=None, shuffle=False
     )
+    valloader = torch.utils.data.DataLoader(valdataset, batch_size=None, shuffle=False)
 
-    test_batch_size = batch_size * 5
-    valloader = torch.utils.data.DataLoader(
-        val_tensor, batch_size=test_batch_size, shuffle=False
-    )
+    # train_tensor = torch.utils.data.TensorDataset(
+    #     traintensor_S, log_B_train_tensor, train_mass_prob_B
+    # )
+    # val_tensor = torch.utils.data.TensorDataset(
+    #     valtensor_S, log_B_val_tensor, val_mass_prob_B
+    # )
+
+    # trainloader = torch.utils.data.DataLoader(
+    #     train_tensor, batch_size=batch_size, shuffle=True
+    # )
+
+    # test_batch_size = batch_size * 5
+    # valloader = torch.utils.data.DataLoader(
+    #     val_tensor, batch_size=test_batch_size, shuffle=False
+    # )
 
     # define model
     from src.models.model_S import r_anode_mass_joint_untransformed, flows_model_RQS
