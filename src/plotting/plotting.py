@@ -154,7 +154,7 @@ def plot_mu_scan_results_multimodels(
     colors = get_cmap("simple_contrast").colors
     styles = {
         "plot": {"marker": "o"},
-        "legend": {"fontsize": 15},
+        "legend": {"fontsize": 12},
         "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
     }
     styles_map = {
@@ -192,11 +192,12 @@ def plot_mu_scan_results_multimodels(
     my = metadata["my"]
     num_B = metadata["num_B"]
     use_full_stats = metadata["use_full_stats"]
+    num_ensemble = metadata["num_ensemble"]
 
     if use_full_stats:
-        text = f"Full stats"
+        text = f"Full stats, {num_ensemble} ensembles"
     else:
-        text = f"Lumi matched"
+        text = f"Lumi matched, {num_ensemble} ensembles"
 
     text += f"//Signal at $(m_X, m_Y) = ({mx}, {my})$ GeV"
 

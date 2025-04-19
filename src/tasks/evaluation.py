@@ -174,54 +174,136 @@ class ScanOverTrueMu(
             json.dump(plot_info, f, cls=NumpyEncoder)
 
 
-class ScanMultiModelsOverTrueMu(
-    ProcessMixin,
+class ScanOverTrueMuEnsembleAvg(
+    BkgModelMixin,
     BaseTask,
 ):
+    
+    mx = luigi.IntParameter(default=100)
+    my = luigi.IntParameter(default=500)
 
-    scan_index = luigi.ListParameter(
-        default=[
-            1,  # 0.01%
-            5,  # 0.10%
-            6,  # 0.17%
-            7,  # 0.30%
-            8,  # 0.53%
-            9,  # 0.93%
-            10,  # 1.63%
-            11,  # 2.85%
-            12,  # 5.01%
+    num_ensemble = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (
+            f"mx_{self.mx}",
+            f"my_{self.my}",
+            f"num_ensemble_{self.num_ensemble}",
+        )
+    
+    def requires(self):
+        return [
+            ScanOverTrueMu.req(self, ensemble=index)
+            for index in range(1, self.num_ensemble + 1)
         ]
-    )
+    
+    def output(self):
+        return {
+            "plot": self.local_target("ensemble_avg_scan_plot.pdf"),
+            "plot_info": self.local_target("ensemble_avg_plot_info.json"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+
+        pred_y = []
+        pred_yerrlo = []
+        pred_yerrhi = []
+
+        for ensemble_index in range(self.num_ensemble):
+            with open(self.input()[ensemble_index]["plot_info"].path, "r") as f:
+                plot_info = json.load(f)
+
+            if ensemble_index == 0:
+                true_x = plot_info["true"]["x"]
+                true_y = plot_info["true"]["y"]
+                misc = plot_info["misc"]
+                pred_x = plot_info["predicted"]["x"]
+
+            pred_y.append(plot_info["predicted"]["y"])
+            pred_yerrlo.append(plot_info["predicted"]["yerrlo"])
+            pred_yerrhi.append(plot_info["predicted"]["yerrhi"])
+
+        # average the predicted values in log 10 base which matches the fitting
+        pred_y = np.log10(np.array(pred_y))
+        pred_yerrlo = np.log10(np.array(pred_yerrlo))
+        pred_yerrhi = np.log10(np.array(pred_yerrhi))
+
+        ensemble_averaged_pred_y_log = np.mean(pred_y, axis=0)
+        ensemble_averaged_pred_yerrlo_log = np.mean(pred_y - pred_yerrlo, axis=0)
+        ensemble_averaged_pred_yerrhi_log = np.mean(pred_yerrhi - pred_y, axis=0)
+
+        ensemble_averaged_pred_y = np.power(10, ensemble_averaged_pred_y_log)
+        ensemble_averaged_pred_yerrlo = np.power(
+            10,
+            ensemble_averaged_pred_y_log - ensemble_averaged_pred_yerrlo_log
+        ) 
+        ensemble_averaged_pred_yerrhi = np.power(
+            10,
+            ensemble_averaged_pred_y_log + ensemble_averaged_pred_yerrhi_log
+        )
+
+        dfs = {
+            "true": pd.DataFrame(
+                {
+                    "x": np.array(true_x),
+                    "y": np.array(true_y),
+                }
+            ),
+            "predicted": pd.DataFrame(
+                {
+                    "x": np.array(pred_x),
+                    "y": np.array(ensemble_averaged_pred_y),
+                    "yerrlo": np.array(ensemble_averaged_pred_yerrlo),
+                    "yerrhi": np.array(ensemble_averaged_pred_yerrhi),
+                }
+            ),
+        }
+
+        self.output()["plot"].parent.touch()
+        output_path = self.output()["plot"].path
+
+        from src.plotting.plotting import plot_mu_scan_results
+
+        plot_mu_scan_results(
+            dfs,
+            misc,
+            output_path,
+        )
+
+        # save plot info
+        plot_info = {
+            "true": {
+                "x": true_x,
+                "y": true_y,
+            },
+            "predicted": {
+                "x": pred_x,
+                "y": ensemble_averaged_pred_y,
+                "yerrlo": ensemble_averaged_pred_yerrlo,
+                "yerrhi": ensemble_averaged_pred_yerrhi,
+            },
+            "misc": misc,
+        }
+        with open(self.output()["plot_info"].path, "w") as f:
+            json.dump(plot_info, f, cls=NumpyEncoder)
+
+
+class ScanMultiModelsOverTrueMuEnsembleAvg(
+    ScanOverTrueMuEnsembleAvg
+):
 
     def requires(self):
         return {
-            "modelB_inSR": [
-                FittingScanResults.req(
-                    self,
-                    s_ratio_index=index,
-                    use_perfect_bkg_model=True,
-                    use_bkg_model_gen_data=False,
-                )
-                for index in self.scan_index
-            ],
-            "modelB_genData": [
-                FittingScanResults.req(
-                    self,
-                    s_ratio_index=index,
-                    use_perfect_bkg_model=False,
-                    use_bkg_model_gen_data=True,
-                )
-                for index in self.scan_index
-            ],
-            "modelB_inSB": [
-                FittingScanResults.req(
-                    self,
-                    s_ratio_index=index,
-                    use_perfect_bkg_model=False,
-                    use_bkg_model_gen_data=False,
-                )
-                for index in self.scan_index
-            ],
+            "modelB_inSR": ScanOverTrueMuEnsembleAvg.req(
+                self, use_perfect_bkg_model=True, use_bkg_model_gen_data=False
+            ),
+            "modelB_genData": ScanOverTrueMuEnsembleAvg.req(
+                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=True
+            ),
+            "modelB_inSB": ScanOverTrueMuEnsembleAvg.req(
+                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=False
+            ),
         }
 
     def output(self):
@@ -233,57 +315,33 @@ class ScanMultiModelsOverTrueMu(
     @law.decorator.safe_output
     def run(self):
 
-        if self.use_full_stats:
-            num_B = 738020
-        else:
-            num_B = 121980
-
         dfs = {}
 
-        for model in ["modelB_inSR", "modelB_genData", "modelB_inSB"]:
+        for model in ["modelB_inSB", "modelB_inSR", "modelB_genData"]:
 
-            mu_true_list = []
-            mu_pred_list = []
-            mu_lowerbound_list = []
-            mu_upperbound_list = []
-
-            for index in range(len(self.scan_index)):
-                with open(self.input()[model][index]["peak_info"].path, "r") as f:
-                    peak_info = json.load(f)
-
-                mu_true = peak_info["mu_true"]
-                mu_pred = peak_info["mu_pred"]
-                mu_lowerbound = peak_info["left_CI"]
-                mu_upperbound = peak_info["right_CI"]
-
-                mu_true_list.append(mu_true)
-                mu_pred_list.append(mu_pred)
-                mu_lowerbound_list.append(mu_lowerbound)
-                mu_upperbound_list.append(mu_upperbound)
+            with open(self.input()[model]["plot_info"].path, "r") as f:
+                avg_scan_info = json.load(f)
 
             if "true" not in dfs:
                 dfs["true"] = pd.DataFrame(
                     {
-                        "x": np.array(mu_true_list),
-                        "y": np.array(mu_true_list),
+                        "x": np.array(avg_scan_info["true"]["x"]),
+                        "y": np.array(avg_scan_info["true"]["y"]),
                     }
                 )
 
             dfs[model] = pd.DataFrame(
                 {
-                    "x": np.array(mu_true_list),
-                    "y": np.array(mu_pred_list),
-                    "yerrlo": np.array(mu_lowerbound_list),
-                    "yerrhi": np.array(mu_upperbound_list),
+                    "x": np.array(avg_scan_info["predicted"]["x"]),
+                    "y": np.array(avg_scan_info["predicted"]["y"]),
+                    "yerrlo": np.array(avg_scan_info["predicted"]["yerrlo"]),
+                    "yerrhi": np.array(avg_scan_info["predicted"]["yerrhi"]),
                 }
             )
 
-        misc = {
-            "mx": self.mx,
-            "my": self.my,
-            "num_B": num_B,
-            "use_full_stats": self.use_full_stats,
-        }
+            misc = avg_scan_info["misc"]
+
+        misc["num_ensemble"] = self.num_ensemble
 
         self.output().parent.touch()
         output_path = self.output().path
@@ -297,55 +355,55 @@ class ScanMultiModelsOverTrueMu(
         )
 
 
-class FittingScanResultsCrossFolds(
-    SigTemplateTrainingUncertaintyMixin,
-    FoldSplitUncertaintyMixin,
-    BkgModelMixin,
-    WScanMixin,
-    SignalStrengthMixin,
-    ProcessMixin,
-    BaseTask,
-):
+# class FittingScanResultsCrossFolds(
+#     SigTemplateTrainingUncertaintyMixin,
+#     FoldSplitUncertaintyMixin,
+#     BkgModelMixin,
+#     WScanMixin,
+#     SignalStrengthMixin,
+#     ProcessMixin,
+#     BaseTask,
+# ):
 
-    def requires(self):
-        return [
-            ScanRANODE.req(self, fold_split_seed=index)
-            for index in range(self.fold_split_num)
-        ]
+#     def requires(self):
+#         return [
+#             ScanRANODE.req(self, fold_split_seed=index)
+#             for index in range(self.fold_split_num)
+#         ]
 
-    def output(self):
-        return {
-            "scan_plot": self.local_target(
-                f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
-            ),
-            "peak_info": self.local_target("peak_info.json"),
-        }
+#     def output(self):
+#         return {
+#             "scan_plot": self.local_target(
+#                 f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
+#             ),
+#             "peak_info": self.local_target("peak_info.json"),
+#         }
 
-    @law.decorator.safe_output
-    def run(self):
+#     @law.decorator.safe_output
+#     def run(self):
 
-        # load scan results
-        for index in range(self.fold_split_num):
-            if index == 0:
-                prob_S_scan = np.load(self.input()[index]["prob_S_scan"].path)
-                prob_B_scan = np.load(self.input()[index]["prob_B_scan"].path)
-            else:
-                prob_S_scan = np.concatenate(
-                    (prob_S_scan, np.load(self.input()[index]["prob_S_scan"].path)),
-                    axis=-1,
-                )
-                prob_B_scan = np.concatenate(
-                    (prob_B_scan, np.load(self.input()[index]["prob_B_scan"].path)),
-                    axis=-1,
-                )
-        prob_S_scan = np.array(prob_S_scan)
-        prob_B_scan = np.array(prob_B_scan)
+#         # load scan results
+#         for index in range(self.fold_split_num):
+#             if index == 0:
+#                 prob_S_scan = np.load(self.input()[index]["prob_S_scan"].path)
+#                 prob_B_scan = np.load(self.input()[index]["prob_B_scan"].path)
+#             else:
+#                 prob_S_scan = np.concatenate(
+#                     (prob_S_scan, np.load(self.input()[index]["prob_S_scan"].path)),
+#                     axis=-1,
+#                 )
+#                 prob_B_scan = np.concatenate(
+#                     (prob_B_scan, np.load(self.input()[index]["prob_B_scan"].path)),
+#                     axis=-1,
+#                 )
+#         prob_S_scan = np.array(prob_S_scan)
+#         prob_B_scan = np.array(prob_B_scan)
 
-        w_scan_range = self.w_range
-        w_true = self.s_ratio
+#         w_scan_range = self.w_range
+#         w_true = self.s_ratio
 
-        from src.fitting.fitting import bootstrap_and_fit
+#         from src.fitting.fitting import bootstrap_and_fit
 
-        self.output()["scan_plot"].parent.touch()
-        output_dir = self.output()
-        bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
+#         self.output()["scan_plot"].parent.touch()
+#         output_dir = self.output()
+#         bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
