@@ -2,6 +2,7 @@ import os, sys
 import importlib
 import luigi
 import law
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import json
@@ -31,6 +32,36 @@ from src.tasks.rnodetemplate import (
 )
 
 
+class ProcessAllSignals(
+    BaseTask
+):
+    
+    mx = luigi.IntParameter(default=100)
+    my = luigi.IntParameter(default=500)
+
+    def store_parts(self):
+        return super().store_parts() + (
+            f"mx_{self.mx}",
+            f"my_{self.my}",
+        )
+    
+    def output(self):
+        return {
+            "signals": self.local_target("reprocessed_signals.npy"),
+        }
+    
+    @law.decorator.safe_output
+    def run(self):
+        data_dir = os.environ.get("DATA_DIR")
+
+        data_path = f"{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5"
+
+        from src.data_prep.signal_processing import process_raw_signals
+        self.output()["signals"].parent.touch()
+        output_path = self.output()["signals"].path
+        process_raw_signals(data_path, output_path, self.mx, self.my)
+
+
 class SignalGeneration(
     SigTemplateTrainingUncertaintyMixin,
     FoldSplitRandomMixin,
@@ -38,13 +69,24 @@ class SignalGeneration(
     BkgModelMixin,
     WScanMixin,
     SignalStrengthMixin,
-    ProcessMixin,
     BaseTask,
 ):
 
     w_test_index = luigi.IntParameter(default=0)
     device = luigi.Parameter(default="cuda:0")
     num_generated_sigs = luigi.IntParameter(default=1000000)
+
+    mx = luigi.IntParameter(default=100)
+    my = luigi.IntParameter(default=500)
+
+    num_ensembles = luigi.IntParameter(default=5)
+
+    def store_parts(self):
+        return super().store_parts() + (
+            f"mx_{self.mx}",
+            f"my_{self.my}",
+            f"num_ensembles_{self.num_ensembles}",
+        )
 
     def store_parts(self):
         w_test_value = self.w_range[self.w_test_index]
@@ -55,10 +97,14 @@ class SignalGeneration(
     def requires(self):
         model_results = {}
 
-        for index in range(self.train_num_sig_templates):
-            model_results[f"model_seed_{index}"] = ScanRANODEFixedSeed.req(
-                self, train_random_seed=index
-            )
+        for ensemble_index in range(self.num_ensembles):
+            model_results_ensemble_i = {}
+            for index in range(self.train_num_sig_templates):
+                model_results_ensemble_i[f"model_seed_{index}"] = ScanRANODEFixedSeed.req(
+                    self, train_random_seed=index,
+                )
+
+            model_results[f"ensemble_{ensemble_index}"] = model_results_ensemble_i
 
         return {
             "model_S_scan_result": model_results,
@@ -81,20 +127,23 @@ class SignalGeneration(
         model_results = self.input()["model_S_scan_result"]
         model_list = []
 
-        for model_rand_index in range(self.train_num_sig_templates):
-            model_results_i_path = model_results[f"model_seed_{model_rand_index}"][
-                "model_list"
-            ].path
-            model_results_i = json.load(open(model_results_i_path, "r"))
+        for ensemble_index in range(self.num_ensembles):
+            model_results_ensemble_i = model_results[f"ensemble_{ensemble_index}"]
+            for model_rand_index in range(self.train_num_sig_templates):
+                model_results_ensemble_i_seed_j_path = model_results_ensemble_i[f"model_seed_{model_rand_index}"][
+                    "model_list"
+                ].path
+                model_results_ensemble_i_seed_j = json.load(open(model_results_ensemble_i_seed_j_path, "r"))
 
-            model_list.append(model_results_i[f"scan_index_{self.w_test_index}"][0])
+                model_list.append(model_results_ensemble_i_seed_j[f"scan_index_{self.w_test_index}"][0])
 
         # generated events using each model
         num_models = len(model_list)
+        print(f"Sampling {self.num_generated_sigs} events from {num_models} models")
         from src.models.model_S import flows_model_RQS
 
         generated_events = []
-        for model_path in model_list:
+        for model_path in tqdm(model_list):
             model_S = flows_model_RQS(
                 device=self.device, num_features=5, context_features=None
             )
@@ -135,11 +184,14 @@ class SignalGenerationPlot(SignalGeneration):
         return {
             "generated_signals": SignalGeneration.req(self),
             "bkg_events": ProcessBkg.req(self),
-            "real_sig": ProcessSignal.req(self),
+            "real_sig": ProcessAllSignals.req(self),
         }
 
     def output(self):
-        return self.local_target("comparison_plots.pdf")
+        return {
+            "generated_features": self.local_target("comparison_plots.pdf"),
+            "generated_m1m2": self.local_target("comparison_m1m2.pdf"),
+        }
 
     @law.decorator.safe_output
     def run(self):
@@ -177,10 +229,49 @@ class SignalGenerationPlot(SignalGeneration):
             "use_modelB_genData": self.use_bkg_model_gen_data,
             "columns": feature_list,
         }
-        self.output().parent.touch()
-
+        self.output()["generated_features"].parent.touch()
         from src.plotting.plotting import plot_event_feature_distribution
+        plot_event_feature_distribution(dfs, metadata, self.output()["generated_features"].path)
 
-        plot_event_feature_distribution(dfs, metadata, self.output().path)
+
+        # make m1m2 plots
+        bkg_mjmin = bkg_df["mjmin"].values
+        bkg_mjmax = bkg_df["mjmax - mjmin"].values + bkg_mjmin
+        bkg_m1m2 = np.concatenate([bkg_mjmin, bkg_mjmax], axis=0) * 1000
+        bkg_m1m2_df = pd.DataFrame(bkg_m1m2, columns=["m1 m2 (GeV)"])
+
+        real_sig_mjmin = real_sig_df["mjmin"].values
+        real_sig_mjmax = real_sig_df["mjmax - mjmin"].values + real_sig_mjmin
+        real_sig_m1m2 = np.concatenate([real_sig_mjmin, real_sig_mjmax], axis=0) * 1000
+        real_sig_m1m2_df = pd.DataFrame(real_sig_m1m2, columns=["m1 m2 (GeV)"])
+
+        generated_mjmin = generated_df["mjmin"].values
+        generated_mjmax = generated_df["mjmax - mjmin"].values + generated_mjmin
+        generated_m1m2 = np.concatenate([generated_mjmin, generated_mjmax], axis=0) * 1000
+        generated_m1m2_df = pd.DataFrame(generated_m1m2, columns=["m1 m2 (GeV)"])
+
+        m1m2_dfs = {
+            "real_signals": real_sig_m1m2_df,
+            "generated_signals": generated_m1m2_df,
+            "background": bkg_m1m2_df,
+        }
+
+        metadata = {
+            "mx": self.mx,
+            "my": self.my,
+            "mu_true": self.s_ratio,
+            "numB": len(bkg_df),
+            "mu_test": self.w_range[self.w_test_index],
+            "use_full_stats": self.use_full_stats,
+            "use_perfect_modelB": self.use_perfect_bkg_model,
+            "use_modelB_genData": self.use_bkg_model_gen_data,
+            "columns": ["m1 m2 (GeV)"],
+        }
+
+        plot_event_feature_distribution(
+            m1m2_dfs,
+            metadata,
+            self.output()["generated_m1m2"].path,
+        )
 
         # law run SignalGenerationPlot --version dev_smallS_10k_all --use-full-stats True --use-perfect-bkg-model True --use-bkg-model-gen-data False --s-ratio-index 7 --w-test-index 11
