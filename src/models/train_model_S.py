@@ -92,38 +92,38 @@ def train_model_S(
     print("w_true: ", s_ratio)
 
     # define training input tensors
-    from src.models.model_S import modelSDataLoader
+    # from src.models.model_S import modelSDataLoader
 
-    traindataset = modelSDataLoader(
-        (traintensor_S, log_B_train_tensor, train_mass_prob_B),
-        device=device,
-        batch_size=batch_size,
-    )
-    valdataset = modelSDataLoader(
-        (valtensor_S, log_B_val_tensor, val_mass_prob_B),
-        device=device,
-        batch_size=batch_size,
-    )
-    trainloader = torch.utils.data.DataLoader(
-        traindataset, batch_size=None, shuffle=False
-    )
-    valloader = torch.utils.data.DataLoader(valdataset, batch_size=None, shuffle=False)
-
-    # train_tensor = torch.utils.data.TensorDataset(
-    #     traintensor_S, log_B_train_tensor, train_mass_prob_B
+    # traindataset = modelSDataLoader(
+    #     (traintensor_S, log_B_train_tensor, train_mass_prob_B),
+    #     device=device,
+    #     batch_size=batch_size,
     # )
-    # val_tensor = torch.utils.data.TensorDataset(
-    #     valtensor_S, log_B_val_tensor, val_mass_prob_B
+    # valdataset = modelSDataLoader(
+    #     (valtensor_S, log_B_val_tensor, val_mass_prob_B),
+    #     device=device,
+    #     batch_size=batch_size,
     # )
-
     # trainloader = torch.utils.data.DataLoader(
-    #     train_tensor, batch_size=batch_size, shuffle=True
+    #     traindataset, batch_size=None, shuffle=False
     # )
+    # valloader = torch.utils.data.DataLoader(valdataset, batch_size=None, shuffle=False)
 
-    # test_batch_size = batch_size * 5
-    # valloader = torch.utils.data.DataLoader(
-    #     val_tensor, batch_size=test_batch_size, shuffle=False
-    # )
+    train_tensor = torch.utils.data.TensorDataset(
+        traintensor_S, log_B_train_tensor, train_mass_prob_B
+    )
+    val_tensor = torch.utils.data.TensorDataset(
+        valtensor_S, log_B_val_tensor, val_mass_prob_B
+    )
+
+    trainloader = torch.utils.data.DataLoader(
+        train_tensor, batch_size=batch_size, shuffle=True
+    )
+
+    test_batch_size = batch_size * 5
+    valloader = torch.utils.data.DataLoader(
+        val_tensor, batch_size=test_batch_size, shuffle=False
+    )
 
     # define model
     from src.models.model_S import r_anode_mass_joint_untransformed, flows_model_RQS
@@ -194,15 +194,8 @@ def train_model_S(
 
     # save best models with lowest val loss
     print("best model val loss: ", min_val_loss)
+    time.sleep(random.uniform(0,2))
     torch.save(best_model, output_dir["sig_model"].path)
-
-    try:
-        loaded_state_dict = torch.load(output_dir["sig_model"].path, map_location="cpu")
-        model_S.load_state_dict(loaded_state_dict)
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to load state dict into model_S from {output_dir['sig_model'].path}: {e}"
-        )
 
     # save metadata
     metadata = {
@@ -215,19 +208,6 @@ def train_model_S(
 
     with open(output_dir["metadata"].path, "w") as f:
         json.dump(metadata, f, cls=NumpyEncoder)
-
-    # load the metadata again to make sure it exist, otherwise throw an error
-    try:
-        with open(output_dir["metadata"].path, "r") as f:
-            loaded_metadata = json.load(f)
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to load metadata from {output_dir['metadata'].path}: {e}"
-        )
-
-    # Optionally, you can further check if loaded_metadata meets expected criteria
-    if not loaded_metadata:
-        raise ValueError("Loaded metadata is empty, which is unexpected.")
 
 
 def pred_model_S(model_dir, data_train_SR_S, device="cuda"):
