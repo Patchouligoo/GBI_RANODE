@@ -213,7 +213,32 @@ class SignalGenerationPlot(SignalGeneration):
             "real_signals": real_sig_df,
             "generated_signals": generated_df,
             "background": bkg_df,
+        }       
+        
+        plot_options = {
+            "real_signals": {
+                "styles": {
+                    "color": "black",
+                    "ls": "-",
+                    "lw": 2,
+                }
+            },
+            "generated_signals": {
+                "styles": {
+                    "color": "red",
+                    "ls": "-",
+                    "lw": 3,
+                }
+            },
+            "background": {
+                "styles": {
+                    "color": "blue",
+                    "ls": "--",
+                    "lw": 1,
+                }
+            },
         }
+
         metadata = {
             "mx": self.mx,
             "my": self.my,
@@ -227,7 +252,7 @@ class SignalGenerationPlot(SignalGeneration):
         }
         self.output()["generated_features"].parent.touch()
         from src.plotting.plotting import plot_event_feature_distribution
-        plot_event_feature_distribution(dfs, metadata, self.output()["generated_features"].path)
+        plot_event_feature_distribution(dfs, metadata, plot_options, self.output()["generated_features"].path)
 
 
         # make m1m2 plots
@@ -267,6 +292,7 @@ class SignalGenerationPlot(SignalGeneration):
         plot_event_feature_distribution(
             m1m2_dfs,
             metadata,
+            plot_options,
             self.output()["generated_m1m2"].path,
         )
 

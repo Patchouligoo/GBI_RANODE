@@ -265,7 +265,7 @@ def plot_mu_scan_results_multimodels(
     plt.close()
 
 
-def plot_event_feature_distribution(dfs, misc, output_path):
+def plot_event_feature_distribution(dfs, misc, plot_options, output_path):
 
     mx = misc["mx"]
     my = misc["my"]
@@ -293,14 +293,14 @@ def plot_event_feature_distribution(dfs, misc, output_path):
     if not use_modelB_genData and not use_perfect_modelB:
         text += ", model B trained in CR"
 
-    plotter = VariableDistributionPlot(dfs)
+    plotter = VariableDistributionPlot(dfs, plot_options=plot_options)
     plotter.add_text(text, 0.05, 0.95, fontsize=18)
 
     with PdfPages(output_path) as pdf:
         for feature in columns:
             axis = plotter.draw(
                 feature,
-                logy=True,
+                logy=False,
                 bin_range=(
                     dfs["background"][feature].min(),
                     dfs["background"][feature].max(),
