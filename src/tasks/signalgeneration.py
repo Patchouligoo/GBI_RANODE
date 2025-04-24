@@ -82,15 +82,11 @@ class SignalGeneration(
     num_ensembles = luigi.IntParameter(default=5)
 
     def store_parts(self):
-        return super().store_parts() + (
+      w_test_value = self.w_range[self.w_test_index]
+      return super().store_parts() + (
             f"mx_{self.mx}",
             f"my_{self.my}",
             f"num_ensembles_{self.num_ensembles}",
-        )
-
-    def store_parts(self):
-        w_test_value = self.w_range[self.w_test_index]
-        return super().store_parts() + (
             f"w_test_index_{self.w_test_index}_value_{str_encode_value(w_test_value)}",
         )
 
