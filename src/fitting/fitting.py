@@ -127,7 +127,6 @@ def bootstrap_and_fit(
     mu_true,
     output_dir,
     bootstrap_num=100,
-    random_seed=42,
 ):
 
     # prob_S_list has shape (num_scan_points, num_models, num_events)
@@ -146,7 +145,6 @@ def bootstrap_and_fit(
     log_likelihood_nominal_mean = log_likelihood_nominal.mean(axis=1)
 
     # Now bootstrap classifiers in model_S to get the uncertainty in the likelihood
-    np.random.seed(random_seed)
     bootstrap_model_S_index = np.random.choice(
         len(prob_S_list[0]), size=(bootstrap_num, len(prob_S_list[0])), replace=True
     )
@@ -189,13 +187,12 @@ def bootstrap_and_fit(
         return xopt, fopt
     
     # define the kernel
-    # kernel = kernel = ConstantKernel(1.0, (1e-5, 1e3)) * RBF(length_scale=0.2, length_scale_bounds=(1e-3, 1)) \
-    #      + ConstantKernel(1.0, (1e-5, 1e3)) * RBF(length_scale=2.0, length_scale_bounds=(1, 1e3)) \
-    #         + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
-    kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RationalQuadratic(length_scale=1.0, alpha=0.5,
-                                                             length_scale_bounds=(0.1, 10),
-                                                             alpha_bounds=(1e-4, 1e3)) \
-         + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
+    kernel = kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RBF(length_scale=0.2, length_scale_bounds=(1e-3, 1e3)) \
+            + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
+    # kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RationalQuadratic(length_scale=1.0, alpha=0.5,
+    #                                                          length_scale_bounds=(0.1, 10),
+    #                                                          alpha_bounds=(1e-4, 1e3))
+        #  + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 1e-3))
     gp = GaussianProcessRegressor(
         kernel=kernel, n_restarts_optimizer=100, optimizer=custom_optimizer, alpha=log_likelihood_nominal_std**2
     )
