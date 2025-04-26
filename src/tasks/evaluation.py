@@ -227,20 +227,22 @@ class ScanOverTrueMuEnsembleAvg(
         # average the predicted values in log 10 base which matches the fitting
         pred_y = np.log10(np.array(pred_y))
         pred_yerrlo = np.log10(np.array(pred_yerrlo))
+        mask_nan_inlo = np.any(np.isneginf(pred_yerrlo), axis=0)
         pred_yerrhi = np.log10(np.array(pred_yerrhi))
 
-        ensemble_averaged_pred_y_log = np.mean(pred_y, axis=0)
-        ensemble_averaged_pred_yerrlo_log = np.mean(pred_y - pred_yerrlo, axis=0)
-        ensemble_averaged_pred_yerrhi_log = np.mean(pred_yerrhi - pred_y, axis=0)
+        ensemble_averaged_pred_y_log = np.median(pred_y, axis=0)
+        ensemble_averaged_pred_yerrlo_log = np.median(pred_yerrlo, axis=0)
+        ensemble_averaged_pred_yerrhi_log = np.median(pred_yerrhi, axis=0)
 
         ensemble_averaged_pred_y = np.power(10, ensemble_averaged_pred_y_log)
         ensemble_averaged_pred_yerrlo = np.power(
             10,
-            ensemble_averaged_pred_y_log - ensemble_averaged_pred_yerrlo_log
+            ensemble_averaged_pred_yerrlo_log
         ) 
+        ensemble_averaged_pred_yerrlo[mask_nan_inlo] = 0
         ensemble_averaged_pred_yerrhi = np.power(
             10,
-            ensemble_averaged_pred_y_log + ensemble_averaged_pred_yerrhi_log
+            ensemble_averaged_pred_yerrhi_log
         )
 
         dfs = {
