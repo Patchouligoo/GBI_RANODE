@@ -5,7 +5,8 @@ from array import array
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel as C
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel, RationalQuadratic
+from scipy.optimize import fmin_l_bfgs_b
 from src.utils.utils import NumpyEncoder
 from src.utils.utils import find_zero_crossings
 
@@ -178,12 +179,25 @@ def bootstrap_and_fit(
 
     x_values = x_values.reshape(-1, 1)
 
+    def custom_optimizer(obj_func, initial_theta, bounds):
+        xopt, fopt, _dict =  fmin_l_bfgs_b(
+            obj_func,
+            initial_theta,
+            bounds=bounds,
+            maxiter=10_000,      # ↑ increase iteration budget
+        )
+        return xopt, fopt
+    
     # define the kernel
-    kernel = C(1.0, (1e-3, 1e3)) * RBF(
-        1e-3, (1e-5, 1e2)
-    )  # + WhiteKernel(noise_level=0.01, noise_level_bounds=(1e-10, 1e+1))
+    # kernel = kernel = ConstantKernel(1.0, (1e-5, 1e3)) * RBF(length_scale=0.2, length_scale_bounds=(1e-3, 1)) \
+    #      + ConstantKernel(1.0, (1e-5, 1e3)) * RBF(length_scale=2.0, length_scale_bounds=(1, 1e3)) \
+    #         + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
+    kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RationalQuadratic(length_scale=1.0, alpha=0.5,
+                                                             length_scale_bounds=(0.1, 10),
+                                                             alpha_bounds=(1e-4, 1e3)) \
+         + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
     gp = GaussianProcessRegressor(
-        kernel=kernel, alpha=log_likelihood_nominal_std**2, n_restarts_optimizer=100
+        kernel=kernel, n_restarts_optimizer=100, optimizer=custom_optimizer, alpha=log_likelihood_nominal_std**2
     )
     gp.fit(x_values, y_values)
 
@@ -204,14 +218,14 @@ def bootstrap_and_fit(
     max_likelihood_lower_bound = y_pred_lower_bound[max_likelihood_index]
 
     # ------------------------------- 95% CI of max likelihood -------------------------------
-    CI95_likelihood = max_likelihood_lower_bound - np.log(2) / event_num
+    CI95_likelihood = max_likelihood - np.log(2) / event_num
     # add y_values to y_pred_upper_bound to make sure the 95CI is more conservative
     # and it needs to be added in where x_values are in x_pred
-    indices = np.searchsorted(x_pred, x_values.flatten())
-    y_likelihood_upper_bound = np.insert(y_pred_upper_bound, indices, y_values, axis=0)
-    x_likelihood_upper_bound = np.insert(x_pred, indices, x_values.flatten(), axis=0)
-    diff = y_likelihood_upper_bound - CI95_likelihood
-    crossings = find_zero_crossings(x_likelihood_upper_bound, diff)
+    # indices = np.searchsorted(x_pred, x_values.flatten())
+    # y_likelihood_upper_bound = np.insert(y_pred_upper_bound, indices, y_values, axis=0)
+    # x_likelihood_upper_bound = np.insert(x_pred, indices, x_values.flatten(), axis=0)
+    diff = y_pred - CI95_likelihood
+    crossings = find_zero_crossings(x_pred, diff)
     # Separate them into those on the left vs. right of the maximum
     left_crossings = [c for c in crossings if c < max_likelihood_w_log]
     right_crossings = [c for c in crossings if c > max_likelihood_w_log]
@@ -225,7 +239,10 @@ def bootstrap_and_fit(
 
     # if at the leftmost point we have y_likelihood_upper_bound > CI95_likelihood
     # then we need to set mu_left to 0
-    if y_likelihood_upper_bound[0] > CI95_likelihood:
+    if y_pred[0] > CI95_likelihood:
+        mu_left = 0
+    # if hit the left most test ppint, set it to be 0
+    if mu_left <= 10**x_pred[0]:
         mu_left = 0
 
     # make plots
