@@ -269,46 +269,43 @@ def plot_event_feature_distribution(dfs, misc, plot_options, output_path):
 
     mx = misc["mx"]
     my = misc["my"]
-    mu_true = misc["mu_true"]
     numB = misc["numB"]
-    sig_significance = mu_true * numB / numB**0.5
-    sig_significance = np.round(sig_significance, 3)
-    mu_true = np.round(mu_true * 100, 3)
-    mu_test = np.round(misc["mu_test"] * 100, 3)
     use_full_stats = misc["use_full_stats"]
     use_perfect_modelB = misc["use_perfect_modelB"]
     use_modelB_genData = misc["use_modelB_genData"]
     columns = misc["columns"]
 
-    text = f"Signal at ({mx}, {my}) GeV \nmu_true = {mu_true}%, significance = {sig_significance}, mu_test = {mu_test}%"
-    if use_full_stats:
-        text += "\n full stats"
-    else:
-        text += "\n lumi matched"
+    # text = f"Signal at ({mx}, {my}) GeV \nmu_true = {mu_true}%, significance = {sig_significance}, mu_test = {mu_test}%"
+    # if use_full_stats:
+    #     text += "\n full stats"
+    # else:
+    #     text += "\n lumi matched"
 
-    if use_perfect_modelB:
-        text += ", model B trained in SR"
-    if use_modelB_genData:
-        text += ", use model B to generate bkgs in data"
-    if not use_modelB_genData and not use_perfect_modelB:
-        text += ", model B trained in CR"
+    # if use_perfect_modelB:
+    #     text += ", model B trained in SR"
+    # if use_modelB_genData:
+    #     text += ", use model B to generate bkgs in data"
+    # if not use_modelB_genData and not use_perfect_modelB:
+    #     text += ", model B trained in CR"
 
     plotter = VariableDistributionPlot(dfs, plot_options=plot_options)
-    plotter.add_text(text, 0.05, 0.95, fontsize=18)
+    # plotter.add_text(text, 0.05, 0.95, fontsize=18)
 
     with PdfPages(output_path) as pdf:
         for feature in columns:
             axis = plotter.draw(
                 feature,
                 logy=False,
-                bin_range=(
+                bins=np.linspace(
                     dfs["background"][feature].min(),
                     dfs["background"][feature].max(),
+                    101,
                 ),
                 show_error=True,
                 comparison_options=None,
             )
             axis.set_xlabel(feature, fontsize=18)
             axis.set_title(f"{feature} distribution", fontsize=18)
+            axis.set_ylim(0, 0.15)
             pdf.savefig(bbox_inches="tight")
             plt.close()

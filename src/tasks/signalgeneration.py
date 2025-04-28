@@ -174,24 +174,60 @@ class SignalGeneration(
         np.save(self.output().path, generated_events)
 
 
-class SignalGenerationPlot(SignalGeneration):
+class SignalGenerationPlot(
+    BkgModelMixin,
+    WScanMixin,
+    BaseTask,
+):
+    
+    num_generated_sigs = luigi.IntParameter(default=1000000)
+
+    mx = luigi.IntParameter(default=100)
+    my = luigi.IntParameter(default=500)
+    num_ensembles = luigi.IntParameter(default=10)
+
+    def store_parts(self):
+      return super().store_parts() + (
+            f"mx_{self.mx}",
+            f"my_{self.my}",
+            f"num_ensembles_{self.num_ensembles}",
+        )
 
     def requires(self):
         return {
-            "generated_signals": SignalGeneration.req(self),
+            "generated_signals": {
+                "s_ratio_index_7": SignalGeneration.req(self, s_ratio_index=7, w_test_index=8),
+                "s_ratio_index_8": SignalGeneration.req(self, s_ratio_index=8, w_test_index=14),
+                "s_ratio_index_10": SignalGeneration.req(self, s_ratio_index=10, w_test_index=15),
+            },
             "bkg_events": ProcessBkg.req(self),
             "real_sig": ProcessAllSignals.req(self),
         }
 
     def output(self):
         return {
-            "generated_features": self.local_target("comparison_plots.pdf"),
             "generated_m1m2": self.local_target("comparison_m1m2.pdf"),
         }
 
     @law.decorator.safe_output
     def run(self):
         feature_list = ["mjj", "mjmin", "mjmax - mjmin", "tau21min", "tau21max"]
+
+        conversion = {
+            0: 0.0,
+            1: 0.0001025915,
+            2: 0.0001801174,
+            3: 0.00031622776601683794,
+            4: 0.0005551935914386209,
+            5: 0.0009747402255566064,
+            6: 0.001711328304161781,
+            7: 0.0030045385302046933,
+            8: 0.00527499706370262,
+            9: 0.009261187281287938,
+            10: 0.01625964693881482,
+            11: 0.02854667663497933,
+            12: 0.05011872336272722,
+        }
 
         # load bkg events
         bkg_file = self.input()["bkg_events"]["SR_bkg"].path
@@ -203,57 +239,18 @@ class SignalGenerationPlot(SignalGeneration):
         real_sig_events = np.load(real_sig_file)[:, :-1]  # remove the label column
         real_sig_df = pd.DataFrame(real_sig_events, columns=feature_list)
 
-        # load the generated events
-        generated_file = self.input()["generated_signals"].path
-        generated_events = np.load(generated_file)[:, :-1]  # remove the label column
-        generated_df = pd.DataFrame(generated_events, columns=feature_list)
-
-        # make plots
-        dfs = {
-            "real_signals": real_sig_df,
-            "generated_signals": generated_df,
-            "background": bkg_df,
-        }       
-        
-        plot_options = {
-            "real_signals": {
-                "styles": {
-                    "color": "black",
-                    "ls": "-",
-                    "lw": 2,
-                }
-            },
-            "generated_signals": {
-                "styles": {
-                    "color": "red",
-                    "ls": "-",
-                    "lw": 3,
-                }
-            },
-            "background": {
-                "styles": {
-                    "color": "blue",
-                    "ls": "--",
-                    "lw": 1,
-                }
-            },
-        }
-
-        metadata = {
-            "mx": self.mx,
-            "my": self.my,
-            "mu_true": self.s_ratio,
-            "numB": len(bkg_df),
-            "mu_test": self.w_range[self.w_test_index],
-            "use_full_stats": self.use_full_stats,
-            "use_perfect_modelB": self.use_perfect_bkg_model,
-            "use_modelB_genData": self.use_bkg_model_gen_data,
-            "columns": feature_list,
-        }
-        self.output()["generated_features"].parent.touch()
-        from src.plotting.plotting import plot_event_feature_distribution
-        plot_event_feature_distribution(dfs, metadata, plot_options, self.output()["generated_features"].path)
-
+        # load the generated events with index 7
+        generated_file_index7 = self.input()["generated_signals"]["s_ratio_index_7"].path
+        generated_events_index_7 = np.load(generated_file_index7)[:, :-1]  # remove the label column
+        generated_df_index7 = pd.DataFrame(generated_events_index_7, columns=feature_list)
+        # load the generated events with index 8
+        generated_file_index8 = self.input()["generated_signals"]["s_ratio_index_8"].path
+        generated_events_index_8 = np.load(generated_file_index8)[:, :-1]  # remove the label column
+        generated_df_index8 = pd.DataFrame(generated_events_index_8, columns=feature_list)
+        # load the generated events with index 9
+        generated_file_index10 = self.input()["generated_signals"]["s_ratio_index_10"].path
+        generated_events_index_10 = np.load(generated_file_index10)[:, :-1]  # remove the label column
+        generated_df_index10 = pd.DataFrame(generated_events_index_10, columns=feature_list)
 
         # make m1m2 plots
         bkg_mjmin = bkg_df["mjmin"].values
@@ -266,28 +263,82 @@ class SignalGenerationPlot(SignalGeneration):
         real_sig_m1m2 = np.concatenate([real_sig_mjmin, real_sig_mjmax], axis=0) * 1000
         real_sig_m1m2_df = pd.DataFrame(real_sig_m1m2, columns=["m1 m2 (GeV)"])
 
-        generated_mjmin = generated_df["mjmin"].values
-        generated_mjmax = generated_df["mjmax - mjmin"].values + generated_mjmin
-        generated_m1m2 = np.concatenate([generated_mjmin, generated_mjmax], axis=0) * 1000
-        generated_m1m2_df = pd.DataFrame(generated_m1m2, columns=["m1 m2 (GeV)"])
+        generated_mjmin_index7 = generated_df_index7["mjmin"].values
+        generated_mjmax_index7 = generated_df_index7["mjmax - mjmin"].values + generated_mjmin_index7
+        generated_m1m2_index7 = np.concatenate([generated_mjmin_index7, generated_mjmax_index7], axis=0) * 1000
+        generated_m1m2_df_index7 = pd.DataFrame(generated_m1m2_index7, columns=["m1 m2 (GeV)"])
+        generated_mjmin_index8 = generated_df_index8["mjmin"].values
+        generated_mjmax_index8 = generated_df_index8["mjmax - mjmin"].values + generated_mjmin_index8
+        generated_m1m2_index8 = np.concatenate([generated_mjmin_index8, generated_mjmax_index8], axis=0) * 1000
+        generated_m1m2_df_index8 = pd.DataFrame(generated_m1m2_index8, columns=["m1 m2 (GeV)"])
+        generated_mjmin_index10 = generated_df_index10["mjmin"].values
+        generated_mjmax_index10 = generated_df_index10["mjmax - mjmin"].values + generated_mjmin_index10
+        generated_m1m2_index10 = np.concatenate([generated_mjmin_index10, generated_mjmax_index10], axis=0) * 1000
+        generated_m1m2_df_index10 = pd.DataFrame(generated_m1m2_index10, columns=["m1 m2 (GeV)"])
+
+        label_signals_1 = rf"signals learned at $\mu$ = {conversion[7]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[8]*100:.3f}%"
+        label_signals_2 = rf"signals learned at $\mu$ = {conversion[8]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[14]*100:.3f}%"
+        label_signals_3 = rf"signals learned at $\mu$ = {conversion[10]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[15]*100:.3f}%"
 
         m1m2_dfs = {
-            "real_signals": real_sig_m1m2_df,
-            "generated_signals": generated_m1m2_df,
+            label_signals_1: generated_m1m2_df_index7,
+            label_signals_2: generated_m1m2_df_index8,
+            label_signals_3: generated_m1m2_df_index10,
             "background": bkg_m1m2_df,
+            "real signals": real_sig_m1m2_df,
+
+        }      
+
+        plot_options = {
+            label_signals_1: {
+                "styles": {
+                    "color": "green",
+                    "ls": "-",
+                    "lw": 3,
+                }
+            },
+            label_signals_2: {
+                "styles": {
+                    "color": "orange",
+                    "ls": "-",
+                    "lw": 3,
+                }
+            },
+            label_signals_3: {
+                "styles": {
+                    "color": "red",
+                    "ls": "-",
+                    "lw": 3,
+                }
+            },
+            "background": {
+                "styles": {
+                    "color": "blue",
+                    "ls": "-",
+                    "lw": 2,
+                }
+            },
+            "real signals": {
+                "styles": {
+                    "color": "black",
+                    "ls": "-",
+                    "lw": 2,
+                }
+            },
         }
 
         metadata = {
             "mx": self.mx,
             "my": self.my,
-            "mu_true": self.s_ratio,
             "numB": len(bkg_df),
-            "mu_test": self.w_range[self.w_test_index],
             "use_full_stats": self.use_full_stats,
             "use_perfect_modelB": self.use_perfect_bkg_model,
             "use_modelB_genData": self.use_bkg_model_gen_data,
             "columns": ["m1 m2 (GeV)"],
         }
+
+        self.output()["generated_m1m2"].parent.touch()
+        from src.plotting.plotting import plot_event_feature_distribution
 
         plot_event_feature_distribution(
             m1m2_dfs,
