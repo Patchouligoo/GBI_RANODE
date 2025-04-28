@@ -188,7 +188,7 @@ def bootstrap_and_fit(
     
     # define the kernel
     kernel = kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RBF(length_scale=0.2, length_scale_bounds=(1e-3, 1e3)) \
-            + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
+            # + WhiteKernel(noise_level=1e-6, noise_level_bounds=(1e-12, 2e-4))
     # kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RationalQuadratic(length_scale=1.0, alpha=0.5,
     #                                                          length_scale_bounds=(0.1, 10),
     #                                                          alpha_bounds=(1e-4, 1e3))
