@@ -230,9 +230,9 @@ class ScanOverTrueMuEnsembleAvg(
         mask_nan_inlo = np.any(np.isneginf(pred_yerrlo), axis=0)
         pred_yerrhi = np.log10(np.array(pred_yerrhi))
 
-        ensemble_averaged_pred_y_log = np.median(pred_y, axis=0)
-        ensemble_averaged_pred_yerrlo_log = np.median(pred_yerrlo, axis=0)
-        ensemble_averaged_pred_yerrhi_log = np.median(pred_yerrhi, axis=0)
+        ensemble_averaged_pred_y_log = np.mean(pred_y, axis=0)
+        ensemble_averaged_pred_yerrlo_log = np.mean(pred_yerrlo, axis=0)
+        ensemble_averaged_pred_yerrhi_log = np.mean(pred_yerrhi, axis=0)
 
         ensemble_averaged_pred_y = np.power(10, ensemble_averaged_pred_y_log)
         ensemble_averaged_pred_yerrlo = np.power(
