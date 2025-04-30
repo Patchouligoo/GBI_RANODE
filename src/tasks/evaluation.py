@@ -357,55 +357,66 @@ class ScanMultiModelsOverTrueMuEnsembleAvg(
         )
 
 
-# class FittingScanResultsCrossFolds(
-#     SigTemplateTrainingUncertaintyMixin,
-#     FoldSplitUncertaintyMixin,
-#     BkgModelMixin,
-#     WScanMixin,
-#     SignalStrengthMixin,
-#     ProcessMixin,
-#     BaseTask,
-# ):
+class ScanMultiMassOverTrueMuEnsembleAvg(
+    BkgModelMixin,
+    BaseTask,
+):
+    num_ensemble = luigi.IntParameter(default=10)
 
-#     def requires(self):
-#         return [
-#             ScanRANODE.req(self, fold_split_seed=index)
-#             for index in range(self.fold_split_num)
-#         ]
+    def requires(self):
+        return {
+            "100, 500": ScanOverTrueMuEnsembleAvg.req(
+                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=False, mx=100, my=500
+            ),
+            "300, 300": ScanOverTrueMuEnsembleAvg.req(
+                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=False, mx=300, my=300
+            ),
+        }
 
-#     def output(self):
-#         return {
-#             "scan_plot": self.local_target(
-#                 f"scan_plot_{str_encode_value(self.s_ratio)}.pdf"
-#             ),
-#             "peak_info": self.local_target("peak_info.json"),
-#         }
+    def output(self):
+        if self.use_full_stats:
+            return self.local_target(f"fullstats_scan_multimass.pdf")
+        else:
+            return self.local_target(f"lumi_matched_scan_multimass.pdf")
 
-#     @law.decorator.safe_output
-#     def run(self):
+    @law.decorator.safe_output
+    def run(self):
 
-#         # load scan results
-#         for index in range(self.fold_split_num):
-#             if index == 0:
-#                 prob_S_scan = np.load(self.input()[index]["prob_S_scan"].path)
-#                 prob_B_scan = np.load(self.input()[index]["prob_B_scan"].path)
-#             else:
-#                 prob_S_scan = np.concatenate(
-#                     (prob_S_scan, np.load(self.input()[index]["prob_S_scan"].path)),
-#                     axis=-1,
-#                 )
-#                 prob_B_scan = np.concatenate(
-#                     (prob_B_scan, np.load(self.input()[index]["prob_B_scan"].path)),
-#                     axis=-1,
-#                 )
-#         prob_S_scan = np.array(prob_S_scan)
-#         prob_B_scan = np.array(prob_B_scan)
+        dfs = {}
 
-#         w_scan_range = self.w_range
-#         w_true = self.s_ratio
+        for model in ["100, 500", "300, 300"]:
 
-#         from src.fitting.fitting import bootstrap_and_fit
+            with open(self.input()[model]["plot_info"].path, "r") as f:
+                avg_scan_info = json.load(f)
 
-#         self.output()["scan_plot"].parent.touch()
-#         output_dir = self.output()
-#         bootstrap_and_fit(prob_S_scan, prob_B_scan, w_scan_range, w_true, output_dir)
+            if "true" not in dfs:
+                dfs["true"] = pd.DataFrame(
+                    {
+                        "x": np.array(avg_scan_info["true"]["x"]),
+                        "y": np.array(avg_scan_info["true"]["y"]),
+                    }
+                )
+
+            dfs[model] = pd.DataFrame(
+                {
+                    "x": np.array(avg_scan_info["predicted"]["x"]),
+                    "y": np.array(avg_scan_info["predicted"]["y"]),
+                    "yerrlo": np.array(avg_scan_info["predicted"]["yerrlo"]),
+                    "yerrhi": np.array(avg_scan_info["predicted"]["yerrhi"]),
+                }
+            )
+
+            misc = avg_scan_info["misc"]
+
+        misc["num_ensemble"] = self.num_ensemble
+
+        self.output().parent.touch()
+        output_path = self.output().path
+
+        from src.plotting.plotting import plot_mu_scan_results_multimass
+
+        plot_mu_scan_results_multimass(
+            dfs,
+            misc,
+            output_path,
+        )
