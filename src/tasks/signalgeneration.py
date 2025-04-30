@@ -196,7 +196,7 @@ class SignalGenerationPlot(
     def requires(self):
         return {
             "generated_signals": {
-                "s_ratio_index_7": SignalGeneration.req(self, s_ratio_index=7, w_test_index=8),
+                "s_ratio_index_7": SignalGeneration.req(self, s_ratio_index=7, w_test_index=13),
                 "s_ratio_index_8": SignalGeneration.req(self, s_ratio_index=8, w_test_index=14),
                 "s_ratio_index_10": SignalGeneration.req(self, s_ratio_index=10, w_test_index=15),
             },
@@ -256,29 +256,29 @@ class SignalGenerationPlot(
         bkg_mjmin = bkg_df["mjmin"].values
         bkg_mjmax = bkg_df["mjmax - mjmin"].values + bkg_mjmin
         bkg_m1m2 = np.concatenate([bkg_mjmin, bkg_mjmax], axis=0) * 1000
-        bkg_m1m2_df = pd.DataFrame(bkg_m1m2, columns=["m1 m2 (GeV)"])
+        bkg_m1m2_df = pd.DataFrame(bkg_m1m2, columns=[r"$m_{J}$"])
 
         real_sig_mjmin = real_sig_df["mjmin"].values
         real_sig_mjmax = real_sig_df["mjmax - mjmin"].values + real_sig_mjmin
         real_sig_m1m2 = np.concatenate([real_sig_mjmin, real_sig_mjmax], axis=0) * 1000
-        real_sig_m1m2_df = pd.DataFrame(real_sig_m1m2, columns=["m1 m2 (GeV)"])
+        real_sig_m1m2_df = pd.DataFrame(real_sig_m1m2, columns=[r"$m_{J}$"])
 
         generated_mjmin_index7 = generated_df_index7["mjmin"].values
         generated_mjmax_index7 = generated_df_index7["mjmax - mjmin"].values + generated_mjmin_index7
         generated_m1m2_index7 = np.concatenate([generated_mjmin_index7, generated_mjmax_index7], axis=0) * 1000
-        generated_m1m2_df_index7 = pd.DataFrame(generated_m1m2_index7, columns=["m1 m2 (GeV)"])
+        generated_m1m2_df_index7 = pd.DataFrame(generated_m1m2_index7, columns=[r"$m_{J}$"])
         generated_mjmin_index8 = generated_df_index8["mjmin"].values
         generated_mjmax_index8 = generated_df_index8["mjmax - mjmin"].values + generated_mjmin_index8
         generated_m1m2_index8 = np.concatenate([generated_mjmin_index8, generated_mjmax_index8], axis=0) * 1000
-        generated_m1m2_df_index8 = pd.DataFrame(generated_m1m2_index8, columns=["m1 m2 (GeV)"])
+        generated_m1m2_df_index8 = pd.DataFrame(generated_m1m2_index8, columns=[r"$m_{J}$"])
         generated_mjmin_index10 = generated_df_index10["mjmin"].values
         generated_mjmax_index10 = generated_df_index10["mjmax - mjmin"].values + generated_mjmin_index10
         generated_m1m2_index10 = np.concatenate([generated_mjmin_index10, generated_mjmax_index10], axis=0) * 1000
-        generated_m1m2_df_index10 = pd.DataFrame(generated_m1m2_index10, columns=["m1 m2 (GeV)"])
+        generated_m1m2_df_index10 = pd.DataFrame(generated_m1m2_index10, columns=[r"$m_{J}$"])
 
-        label_signals_1 = rf"signals learned at $\mu$ = {conversion[7]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[8]*100:.3f}%"
-        label_signals_2 = rf"signals learned at $\mu$ = {conversion[8]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[14]*100:.3f}%"
-        label_signals_3 = rf"signals learned at $\mu$ = {conversion[10]*100:.3f}%" + "\n" + rf"pred $\mu$={self.w_range[15]*100:.3f}%"
+        label_signals_1 = rf"signals learned at $\mu$ = {conversion[7]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[13]*100:.3f}%"
+        label_signals_2 = rf"signals learned at $\mu$ = {conversion[8]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[14]*100:.3f}%"
+        label_signals_3 = rf"signals learned at $\mu$ = {conversion[10]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[15]*100:.3f}%"
 
         m1m2_dfs = {
             label_signals_1: generated_m1m2_df_index7,
@@ -294,33 +294,37 @@ class SignalGenerationPlot(
                 "styles": {
                     "color": "green",
                     "ls": "-",
-                    "lw": 3,
+                    "lw": 4,
                 }
             },
             label_signals_2: {
                 "styles": {
-                    "color": "orange",
+                    "color": "blue",
                     "ls": "-",
                     "lw": 3,
                 }
             },
             label_signals_3: {
                 "styles": {
-                    "color": "red",
+                    "color": "orange",
                     "ls": "-",
-                    "lw": 3,
+                    "lw": 2,
                 }
             },
             "background": {
                 "styles": {
-                    "color": "blue",
+                    "color": "black",
+                    "histtype": "stepfilled",
+                    "alpha": 0.2,
                     "ls": "-",
                     "lw": 2,
                 }
             },
             "real signals": {
                 "styles": {
-                    "color": "black",
+                    "color": "red",
+                    "histtype": "stepfilled",
+                    "alpha": 0.2,
                     "ls": "-",
                     "lw": 2,
                 }
@@ -334,7 +338,7 @@ class SignalGenerationPlot(
             "use_full_stats": self.use_full_stats,
             "use_perfect_modelB": self.use_perfect_bkg_model,
             "use_modelB_genData": self.use_bkg_model_gen_data,
-            "columns": ["m1 m2 (GeV)"],
+            "columns": [r"$m_{J}$"],
         }
 
         self.output()["generated_m1m2"].parent.touch()

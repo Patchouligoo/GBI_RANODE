@@ -464,11 +464,12 @@ def plot_event_feature_distribution(dfs, misc, plot_options, output_path):
                     dfs["background"][feature].max(),
                     101,
                 ),
-                show_error=True,
+                unit="GeV",
+                show_error=False,
                 comparison_options=None,
+                xlabel=feature,
             )
-            axis.set_xlabel(feature, fontsize=18)
-            axis.set_title(f"{feature} distribution", fontsize=18)
-            axis.set_ylim(0, 0.15)
+            # axis.set_title(f"{feature} distribution", fontsize=18)
+            axis.set_ylim(0, 0.25)
             pdf.savefig(bbox_inches="tight")
             plt.close()
