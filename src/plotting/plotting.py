@@ -182,10 +182,10 @@ def plot_mu_scan_results_multimodels(
         # 'draw_legend': False,
     }
     label_map = {
-        "true": "Truth",
+        "true": rf"Truth $\mu$",
     }
     for index, key in enumerate(key_list):
-        label_map[key] = f"Predicted {key}"
+        label_map[key] = rf"Predicted $\mu$, {key}"
 
     # -------------------- making plots --------------------
     mx = metadata["mx"]

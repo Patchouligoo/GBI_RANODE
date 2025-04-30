@@ -182,7 +182,7 @@ class ScanOverTrueMuEnsembleAvg(
     mx = luigi.IntParameter(default=100)
     my = luigi.IntParameter(default=500)
 
-    num_ensemble = luigi.IntParameter(default=5)
+    num_ensemble = luigi.IntParameter(default=10)
 
     def store_parts(self):
         return super().store_parts() + (
