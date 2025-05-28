@@ -294,16 +294,12 @@ class PreprocessingFold(
 
 
 class PlotMjjDistribution(
-    SignalStrengthMixin,
     ProcessMixin,
     BaseTask,
 ):
-    
-    s_ratio_index = luigi.IntParameter(default=12)
-    
+        
     def requires(self):
         return {
-            "signal": ProcessSignal.req(self),
             "bkg": ProcessBkg.req(self),
         }
     
@@ -312,4 +308,91 @@ class PlotMjjDistribution(
     
     @law.decorator.safe_output
     def run(self):
-        pass
+        
+        # load bkg
+        SR_bkg = np.load(self.input()["bkg"]["SR_bkg"].path)
+        SR_bkg_mjj = SR_bkg[:, 0]
+        SB_bkg_train = np.load(self.input()["bkg"]["CR_train"].path)
+        SB_bkg_mjj_train = SB_bkg_train[:, 0]
+        SB_bkg_val = np.load(self.input()["bkg"]["CR_val"].path)
+        SB_bkg_mjj_val = SB_bkg_val[:, 0]
+        SB_bkg_mjj = np.concatenate([SB_bkg_mjj_train, SB_bkg_mjj_val], axis=0)
+        bkg_mjj = np.concatenate([SR_bkg_mjj, SB_bkg_mjj], axis=0)
+
+        # process signal
+        data_dir = os.environ.get("DATA_DIR")
+
+        data_path = f"{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5"
+
+        from src.data_prep.signal_processing import process_raw_signals
+        signal = process_raw_signals(data_path, output_path=None,mx=self.mx, my=self.my)
+        signal_mjj = signal[:, 0]
+
+        # make plot
+        from quickstats.plots import VariableDistributionPlot
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        dfs = {
+            "background": pd.DataFrame({"mjj": bkg_mjj}),
+            "signal": pd.DataFrame({"mjj": signal_mjj}),
+        }
+
+        plot_options = {
+            "background": {
+                "styles": {
+                    "color": "black",
+                    "histtype": "step",
+                    "lw": 2,
+                }
+            },
+            "signal": {
+                "styles": {
+                    "color": "red",
+                    "histtype": "stepfilled",
+                    "lw": 2,
+                }
+            },
+        }
+
+        plotter = VariableDistributionPlot(dfs, plot_options=plot_options)
+
+        self.output().parent.touch()
+        output_path = self.output().path
+        with PdfPages(output_path) as pdf:
+
+   
+            
+            axis = plotter.draw(
+                "mjj",
+                logy=True,
+                normalize=False,
+                bins=np.linspace(
+                    2,
+                    8,
+                    151,
+                ),
+                unit="TeV",
+                show_error=False,
+                comparison_options=None,
+                xlabel="mjj",
+            )
+            
+            plt.axvline(
+                x=3.3,
+                color="black",
+                linestyle="--",
+                label="Signal Region Boundary (3.3 - 3.7 TeV)",
+            )
+
+            plt.axvline(
+                x=3.7,
+                color="black",
+                linestyle="--"
+            )         
+
+
+            plt.xlim(2, 8)
+            pdf.savefig(bbox_inches="tight")
+            plt.close()
+

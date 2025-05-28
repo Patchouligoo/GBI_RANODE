@@ -167,4 +167,8 @@ def process_raw_signals(input_path, output_path, mx, my):
 
     print(f"Num signals for mx={mx}, my={my}: {len(output)}")
 
-    np.save(output_path, output)
+    if output_path is not None:
+        np.save(output_path, output)
+
+    else:
+        return output
