@@ -54,6 +54,15 @@ def logit_transform(x, min_vals, max_vals):
     return logit, domain_mask
 
 
+def inverse_logit_transform(x, min_vals, max_vals):
+    x_norm = 1 / (1 + np.exp(-x))
+    return x_norm * (max_vals - min_vals) + min_vals
+
+
+def inverse_standardize(x, mean, std):
+    return x * std + mean
+
+
 def preprocess_params_fit(data):
     preprocessing_params = {}
     preprocessing_params["min"] = np.min(data[:, 1:-1], axis=0)
@@ -83,6 +92,18 @@ def preprocess_params_transform(data, params):
         preprocessed_data[:, 1:-1], params["mean"], params["std"]
     )
     return preprocessed_data
+
+
+def inverse_transform(data, params):
+    inverse_data = inverse_standardize(
+        data[:, 1:-1], np.array(params["mean"]), np.array(params["std"])
+    )
+    inverse_data = inverse_logit_transform(
+        inverse_data, np.array(params["min"]), np.array(params["max"])
+    )
+    inverse_data = np.hstack([data[:, 0:1], inverse_data, data[:, -1:]])
+
+    return inverse_data
 
 
 def fold_splitting(

@@ -240,7 +240,7 @@ class PreprocessingFold(
         SR_data_trainval, SR_data_test = fold_splitting(
             SR_data,
             n_folds=self.fold_split_num,
-            random_seed=42,
+            random_seed=self.ensemble,
             test_fold=self.fold_split_seed,
         )
 
@@ -291,3 +291,25 @@ class PreprocessingFold(
             "test bkg num: ",
             test_bkg_num,
         )
+
+
+class PlotMjjDistribution(
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+    
+    s_ratio_index = luigi.IntParameter(default=12)
+    
+    def requires(self):
+        return {
+            "signal": ProcessSignal.req(self),
+            "bkg": ProcessBkg.req(self),
+        }
+    
+    def output(self):
+        return self.local_target("mjj_distribution.pdf")
+    
+    @law.decorator.safe_output
+    def run(self):
+        pass

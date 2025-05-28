@@ -11,16 +11,16 @@ action() {
 
     module load python
 
-    conda activate /global/common/software/m3246/HAXAD/software/haxad3
+    conda activate /pscratch/sd/m/mukyu/SBI_RANODE/env/sbi_ranode_env
 
     echo $PYTHONPATH
 
     # define output directory
-    export OUTPUT_DIR="/pscratch/sd/m/mukyu/SBI_RANODE"
+    export OUTPUT_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/RANODE_workspace"
     mkdir -p $OUTPUT_DIR
 
     # define scratch directory
-    export SCRATCH_DIR="/pscratch/sd/m/mukyu/SBI_RANODE/scratch"
+    export SCRATCH_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/RANODE_workspace/scratch"
     # create if not exist
     mkdir -p $SCRATCH_DIR
 

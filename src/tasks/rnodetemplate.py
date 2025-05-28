@@ -20,6 +20,7 @@ from src.utils.law import (
 from src.tasks.preprocessing import PreprocessingFold
 from src.tasks.bkgtemplate import PredictBkgProb
 from src.utils.utils import NumpyEncoder, str_encode_value
+from src.tasks.bkgsampling import PredictBkgProbGen, PreprocessingFoldwModelBGen
 
 
 class RNodeTemplate(
@@ -43,10 +44,17 @@ class RNodeTemplate(
         return super().store_parts() + (f"w_{w_value}",)
 
     def requires(self):
-        return {
-            "preprocessed_data": PreprocessingFold.req(self),
-            "bkgprob": PredictBkgProb.req(self),
-        }
+
+        if self.use_bkg_model_gen_data:
+            return {
+                "preprocessed_data": PreprocessingFoldwModelBGen.req(self),
+                "bkgprob": PredictBkgProbGen.req(self),
+            }
+        else:
+            return {
+                "preprocessed_data": PreprocessingFold.req(self),
+                "bkgprob": PredictBkgProb.req(self),
+            }
 
     def output(self):
         return {
@@ -129,7 +137,7 @@ class ScanRANODEFixedSeed(
         model_path_list_scan = {}
 
         for index_w in range(self.scan_number):
-
+            print(self.input()[f"model_{index_w}"]["metadata"].path)
             # save min val loss
             metadata_w = self.input()[f"model_{index_w}"]["metadata"].load()
             min_val_loss = metadata_w["min_val_loss_list"]
@@ -172,11 +180,18 @@ class ScanRANODE(
                 self, train_random_seed=index
             )
 
-        return {
-            "model_S_scan_result": model_results,
-            "data": PreprocessingFold.req(self),
-            "bkgprob": PredictBkgProb.req(self),
-        }
+        if self.use_bkg_model_gen_data:
+            return {
+                "model_S_scan_result": model_results,
+                "data": PreprocessingFoldwModelBGen.req(self),
+                "bkgprob": PredictBkgProbGen.req(self),
+            }
+        else:
+            return {
+                "model_S_scan_result": model_results,
+                "data": PreprocessingFold.req(self),
+                "bkgprob": PredictBkgProb.req(self),
+            }
 
     def output(self):
         return {
@@ -213,6 +228,7 @@ class ScanRANODE(
                     f"model_seed_{index}"
                 ]["model_list"].path
 
+                print(model_list_path)
                 with open(model_list_path, "r") as f:
                     model_scan_dict = json.load(f)
 
