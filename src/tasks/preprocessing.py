@@ -291,3 +291,25 @@ class PreprocessingFold(
             "test bkg num: ",
             test_bkg_num,
         )
+
+
+class PlotMjjDistribution(
+    SignalStrengthMixin,
+    ProcessMixin,
+    BaseTask,
+):
+    
+    s_ratio_index = luigi.IntParameter(default=12)
+    
+    def requires(self):
+        return {
+            "signal": ProcessSignal.req(self),
+            "bkg": ProcessBkg.req(self),
+        }
+    
+    def output(self):
+        return self.local_target("mjj_distribution.pdf")
+    
+    @law.decorator.safe_output
+    def run(self):
+        pass
