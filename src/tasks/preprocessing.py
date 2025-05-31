@@ -299,18 +299,18 @@ class PlotMjjDistribution(
     ProcessMixin,
     BaseTask,
 ):
-        
+
     def requires(self):
         return {
             "bkg": ProcessBkg.req(self),
         }
-    
+
     def output(self):
         return self.local_target("mjj_distribution.pdf")
-    
+
     @law.decorator.safe_output
     def run(self):
-        
+
         # load bkg
         SR_bkg = np.load(self.input()["bkg"]["SR_bkg"].path)
         SR_bkg_mjj = SR_bkg[:, 0]
@@ -327,7 +327,10 @@ class PlotMjjDistribution(
         data_path = f"{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5"
 
         from src.data_prep.signal_processing import process_raw_signals
-        signal = process_raw_signals(data_path, output_path=None,mx=self.mx, my=self.my)
+
+        signal = process_raw_signals(
+            data_path, output_path=None, mx=self.mx, my=self.my
+        )
         signal_mjj = signal[:, 0]
 
         # make plot
@@ -363,8 +366,6 @@ class PlotMjjDistribution(
         output_path = self.output().path
         with PdfPages(output_path) as pdf:
 
-   
-            
             axis = plotter.draw(
                 "mjj",
                 logy=True,
@@ -379,7 +380,7 @@ class PlotMjjDistribution(
                 comparison_options=None,
                 xlabel="mjj",
             )
-            
+
             plt.axvline(
                 x=3.3,
                 color="black",
@@ -387,14 +388,8 @@ class PlotMjjDistribution(
                 label="Signal Region Boundary (3.3 - 3.7 TeV)",
             )
 
-            plt.axvline(
-                x=3.7,
-                color="black",
-                linestyle="--"
-            )         
-
+            plt.axvline(x=3.7, color="black", linestyle="--")
 
             plt.xlim(2, 8)
             pdf.savefig(bbox_inches="tight")
             plt.close()
-
