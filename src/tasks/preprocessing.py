@@ -36,7 +36,7 @@ class ProcessSignal(SignalStrengthMixin, ProcessMixin, BaseTask):
         data_dir = os.environ.get("DATA_DIR")
 
         if self.use_full_stats:
-            data_path = f"{data_dir}/hopefully_really_final_signal_features_W_qq.h5"
+            data_path = f"{data_dir}/full_stats_signal_features_W_qq.h5"
         else:
             data_path = (
                 f"{data_dir}/lumi_matched_train_val_test_split_signal_features_W_qq.h5"

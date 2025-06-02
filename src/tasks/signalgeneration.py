@@ -54,7 +54,7 @@ class ProcessAllSignals(
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
 
-        data_path = f"{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5"
+        data_path = f"{data_dir}/events_anomalydetection_Z_XY_qq_parametric.h5"
 
         from src.data_prep.signal_processing import process_raw_signals
         self.output()["signals"].parent.touch()
