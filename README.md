@@ -36,7 +36,7 @@ law index
 After this different tasks can be run with law by commands like:
 
 ```
-law Tasknames --version output_postfix --flags XXX
+law taskname --version output_postfix --flags XXX
 ```
 
 ### Command Line Interface
