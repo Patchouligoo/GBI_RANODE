@@ -182,10 +182,10 @@ def plot_mu_scan_results_multimodels(
         # 'draw_legend': False,
     }
     label_map = {
-        "true": rf"Truth $\mu$",
+        "true": rf"Truth$",
     }
     for index, key in enumerate(key_list):
-        label_map[key] = rf"Predicted $\mu$, {key}"
+        label_map[key] = f"{key}"
 
     # -------------------- making plots --------------------
     mx = metadata["mx"]
@@ -194,22 +194,22 @@ def plot_mu_scan_results_multimodels(
     use_full_stats = metadata["use_full_stats"]
     num_ensemble = metadata["num_ensemble"]
 
-    if use_full_stats:
-        text = f"Full stats, {num_ensemble} ensembles"
-    else:
-        text = f"Lumi matched, {num_ensemble} ensembles"
+    # if use_full_stats:
+    #     text = f"Full stats, {num_ensemble} ensembles"
+    # else:
+    #     text = f"Lumi matched, {num_ensemble} ensembles"
 
-    text += f"//Signal at $(m_X, m_Y) = ({mx}, {my})$ GeV"
+    # text += f"//Signal at $(m_X, m_Y) = ({mx}, {my})$ GeV"
 
     xticks = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 5e-2]
     xticklabels = ["0.01", "0.02", "0.05", "0.1", "0.2", "0.5", "1", "5"]
     xticks2 = mu2sig(np.array(xticks), B=num_B)
     xticklabels2 = [str(round(v, 2)) for v in xticks2]
-    xlabel = "Signal Injection (%)"
+    xlabel = r"$\mu_{inj}\,(\%)$"
     plotter = General1DPlot(
         dfs, styles=styles, styles_map=styles_map, label_map=label_map, config=config
     )
-    plotter.add_text(text, 0.05, 0.95, fontsize=18)
+    # plotter.add_text(text, 0.05, 0.95, fontsize=18)
 
     ax = plotter.draw(
         "x",
@@ -218,7 +218,7 @@ def plot_mu_scan_results_multimodels(
         yerrloattrib="yerrlo",
         yerrhiattrib="yerrhi",
         xlabel=xlabel,
-        ylabel=r"$\mu\,(\%)$",
+        ylabel=r"$\hat{\mu}\,(\%)$",
         ymin=2e-5,
         ymax=0.1,
         logx=True,
@@ -352,7 +352,7 @@ def plot_mu_scan_results_multimass(
         "true": rf"Truth $\mu$",
     }
     for index, key in enumerate(key_list):
-        label_map[key] = rf"Predicted $\mu$" + "\n" +  f"signal mass: {key}"
+        label_map[key] = rf"Predicted $\mu$" + "\n" + f"signal mass: {key}"
 
     # -------------------- making plots --------------------
     num_B = metadata["num_B"]
