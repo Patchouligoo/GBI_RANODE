@@ -7,7 +7,7 @@ This part of the code corresponds to the RANODE section in the paper ["Generator
 The environment requirement for RANODE based inference is available in `requirements.txt`, it can be installed by running:
 
 ```
-conda env create -f environment.yml --prefix /path/sbi_ranode_env
+conda env create -f environment.yml --prefix /path/gbi_ranode_env
 ```
 
 To setup the rest of environment variables, run
@@ -30,6 +30,9 @@ During first executation, user will be prompted to enter the input and output di
 
 ["Luigi Analysis Workflow (LAW)"](https://github.com/riga/law) is used to construct this project. First, one needs to setup the law task list by running
 ```
+conda activate /path/gbi_ranode_env
+source setup.sh
+
 law index
 ```
 
