@@ -9,24 +9,54 @@ action() {
     export LAW_HOME="${this_dir}/.law"
     export LAW_CONFIG_FILE="${this_dir}/law.cfg"
 
-    module load python
+    # set input and output directories
+    CONFIG_FILE="${this_dir}/.config"
+    # Function to read the output directory from the config file
+    read_config() {
+        if [[ -f $CONFIG_FILE ]]; then
+            source $CONFIG_FILE
+        else
+            export OUTPUT_DIR=""
+            export DATA_DIR=""
+        fi
+    }
 
-    conda activate /pscratch/sd/m/mukyu/SBI_RANODE/env/sbi_ranode_env
+    # Function to write the input and output directory to the config file
+    write_config() {
+        echo "export OUTPUT_DIR=\"$OUTPUT_DIR\"" > $CONFIG_FILE
+        echo "export DATA_DIR=\"$DATA_DIR\"" >> $CONFIG_FILE
+        echo "Configuration saved to $CONFIG_FILE"
+    }
 
-    echo $PYTHONPATH
+    # Prompt user for input if OUTPUT_DIR and DATA_DIR are not set
+    prompt_user() {
+        read -p "Enter the output directory: " user_input1
+        read -p "Enter the input directory: " user_input2
+        if [[ -d $user_input1 && -d $user_input2 ]]; then
+            export OUTPUT_DIR="$user_input1"
+            export DATA_DIR="$user_input2"
+        else
+            echo "Invalid directories. Please try again."
+            prompt_user
+        fi
+        write_config
+    }
 
-    # define output directory
-    export OUTPUT_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/RANODE_workspace"
-    mkdir -p $OUTPUT_DIR
+    read_config
 
-    # define scratch directory
-    export SCRATCH_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/RANODE_workspace/scratch"
-    # create if not exist
-    mkdir -p $SCRATCH_DIR
+    if [[ -z $OUTPUT_DIR ]]; then
+        echo "No output directory configured."
+        prompt_user
+    fi
 
-    # define data directory
-    export DATA_DIR="/global/cfs/cdirs/m3246/SBI_PAWS/"
+    echo "Using output directory: $OUTPUT_DIR"
+    echo "Using input directory: $DATA_DIR"
 
+    # Load necessary modules and activate conda environment
+    # module load python
+    # conda activate /pscratch/sd/m/mukyu/SBI_RANODE/env/sbi_ranode_env
+    # module load miniconda CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
+    # conda activate /gpfs/gibbs/pi/demers/runze/conda/envs/sbi_ranode_env
 
 }
 
