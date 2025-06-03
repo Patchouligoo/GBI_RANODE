@@ -146,24 +146,31 @@ def process_raw_signals(input_path, output_path, mx, my):
     mjj = get_dijetmass_ptetaphi(jets) / 1000
 
     from config.configs import SR_MIN, SR_MAX
+
     mask_mjj = (mjj > SR_MIN) & (mjj < SR_MAX)
     target_process_df = target_process_df[mask_mjj]
     mjj = mjj[mask_mjj]
 
     # get other features
     # get mj1 and mj2, sort them with mj1 being the smaller one
-    mj1mj2 = np.array(target_process_df[['mj1', 'mj2']]) / 1000
+    mj1mj2 = np.array(target_process_df[["mj1", "mj2"]]) / 1000
     mjmin = mj1mj2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     mjmax = mj1mj2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
 
     # get tau21j1, tau21j2 and sort by mj1 mj2 in the same way
-    tau21j1 = target_process_df["tau2j1"].values / ( 1e-5 + target_process_df["tau1j1"].values )
-    tau21j2 = target_process_df["tau2j2"].values / ( 1e-5 + target_process_df["tau1j2"].values )
+    tau21j1 = target_process_df["tau2j1"].values / (
+        1e-5 + target_process_df["tau1j1"].values
+    )
+    tau21j2 = target_process_df["tau2j2"].values / (
+        1e-5 + target_process_df["tau1j2"].values
+    )
     tau21j1j2 = np.stack([tau21j1, tau21j2], axis=1)
     tau21min = tau21j1j2[range(len(mj1mj2)), np.argmin(mj1mj2, axis=1)]
     tau21max = tau21j1j2[range(len(mj1mj2)), np.argmax(mj1mj2, axis=1)]
 
-    output = np.stack([mjj, mjmin, mjmax-mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1)
+    output = np.stack(
+        [mjj, mjmin, mjmax - mjmin, tau21min, tau21max, np.ones(len(mj1mj2))], axis=1
+    )
 
     print(f"Num signals for mx={mx}, my={my}: {len(output)}")
 
