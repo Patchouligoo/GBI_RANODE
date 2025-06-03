@@ -55,8 +55,8 @@ action() {
     # Load necessary modules and activate conda environment
     # module load python
     # conda activate /pscratch/sd/m/mukyu/SBI_RANODE/env/sbi_ranode_env
-    module load miniconda CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
-    conda activate /gpfs/gibbs/pi/demers/runze/conda/envs/sbi_ranode_env
+    # module load miniconda CUDA/12.1.1 cuDNN/8.9.2.26-CUDA-12.1.1
+    # conda activate /gpfs/gibbs/pi/demers/runze/conda/envs/sbi_ranode_env
 
 }
 
