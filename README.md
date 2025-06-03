@@ -23,7 +23,7 @@ During first executation, user will be prompted to enter the input and output di
 - Simulated QCD background from official LHCO dataset: https://zenodo.org/records/4536377/files/events_anomalydetection_v2.features.h5
 - Extra simulated QCD background : https://zenodo.org/records/8370758/files/events_anomalydetection_qcd_extra_inneronly_features.h5
 - Extended parametric W->X(qq)Y(qq) signal : https://zenodo.org/records/15384386/files/events_anomalydetection_extended_Z_XY_qq_parametric.h5
-- Signal ensembles with trainvaltest splitting :
+- Signal ensembles with trainvaltest splitting : lumi_matched_train_val_test_split_signal_features_W_qq.h5
 
 
 ### Tutorials
