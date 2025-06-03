@@ -83,8 +83,9 @@ def plot_mu_scan_results(
     xticks = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 5e-2]
     xticklabels = ["0.01", "0.02", "0.05", "0.1", "0.2", "0.5", "1", "5"]
     xticks2 = mu2sig(np.array(xticks), B=num_B)
-    xticklabels2 = [str(round(v, 2)) for v in xticks2]
-    xlabel = "Signal Injection (%)"
+    xticklabels2 = [0.03, 0.07, 0.17, 0.35, 0.7, 1.74, 3.49, 17.43]
+    # xticklabels2 = [str(round(v, 2)) for v in xticks2]
+    xlabel = r"$\mu_{inj}\,(\%)$"
     plotter = General1DPlot(
         dfs, styles=styles, styles_map=styles_map, label_map=label_map, config=config
     )
@@ -97,7 +98,7 @@ def plot_mu_scan_results(
         yerrloattrib="yerrlo",
         yerrhiattrib="yerrhi",
         xlabel=xlabel,
-        ylabel=r"$\mu\,(\%)$",
+        ylabel=r"$\hat{\mu}\,(\%)$",
         ymin=2e-5,
         ymax=0.1,
         logx=True,
@@ -154,7 +155,7 @@ def plot_mu_scan_results_multimodels(
     colors = get_cmap("simple_contrast").colors
     styles = {
         "plot": {"marker": "o"},
-        "legend": {"fontsize": 12},
+        "legend": {"fontsize": 18},
         "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
     }
     styles_map = {
@@ -181,11 +182,6 @@ def plot_mu_scan_results_multimodels(
         "inherit_color": False,
         # 'draw_legend': False,
     }
-    label_map = {
-        "true": rf"Truth$",
-    }
-    for index, key in enumerate(key_list):
-        label_map[key] = f"{key}"
 
     # -------------------- making plots --------------------
     mx = metadata["mx"]
@@ -193,6 +189,7 @@ def plot_mu_scan_results_multimodels(
     num_B = metadata["num_B"]
     use_full_stats = metadata["use_full_stats"]
     num_ensemble = metadata["num_ensemble"]
+    label_map = metadata["label_map"]
 
     # if use_full_stats:
     #     text = f"Full stats, {num_ensemble} ensembles"
@@ -204,7 +201,8 @@ def plot_mu_scan_results_multimodels(
     xticks = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 5e-2]
     xticklabels = ["0.01", "0.02", "0.05", "0.1", "0.2", "0.5", "1", "5"]
     xticks2 = mu2sig(np.array(xticks), B=num_B)
-    xticklabels2 = [str(round(v, 2)) for v in xticks2]
+    xticklabels2 = [0.03, 0.07, 0.17, 0.35, 0.7, 1.74, 3.49, 17.43]
+    # xticklabels2 = [str(round(v, 2)) for v in xticks2]
     xlabel = r"$\mu_{inj}\,(\%)$"
     plotter = General1DPlot(
         dfs, styles=styles, styles_map=styles_map, label_map=label_map, config=config
@@ -321,7 +319,7 @@ def plot_mu_scan_results_multimass(
     colors = get_cmap("simple_contrast").colors
     styles = {
         "plot": {"marker": "o"},
-        "legend": {"fontsize": 12},
+        "legend": {"fontsize": 18},
         "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
     }
     styles_map = {
@@ -348,31 +346,21 @@ def plot_mu_scan_results_multimass(
         "inherit_color": False,
         # 'draw_legend': False,
     }
-    label_map = {
-        "true": rf"Truth $\mu$",
-    }
-    for index, key in enumerate(key_list):
-        label_map[key] = rf"Predicted $\mu$" + "\n" + f"signal mass: {key}"
+    label_map = metadata["label_map"]
 
     # -------------------- making plots --------------------
     num_B = metadata["num_B"]
     use_full_stats = metadata["use_full_stats"]
     num_ensemble = metadata["num_ensemble"]
 
-    if use_full_stats:
-        text = f"Full stats, {num_ensemble} ensembles"
-    else:
-        text = f"Lumi matched, {num_ensemble} ensembles"
-
     xticks = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 5e-2]
     xticklabels = ["0.01", "0.02", "0.05", "0.1", "0.2", "0.5", "1", "5"]
     xticks2 = mu2sig(np.array(xticks), B=num_B)
-    xticklabels2 = [str(round(v, 2)) for v in xticks2]
-    xlabel = "Signal Injection (%)"
+    xticklabels2 = [0.03, 0.07, 0.17, 0.35, 0.7, 1.74, 3.49, 17.43]
+    xlabel = r"$\mu_{inj}\,(\%)$"
     plotter = General1DPlot(
         dfs, styles=styles, styles_map=styles_map, label_map=label_map, config=config
     )
-    plotter.add_text(text, 0.05, 0.95, fontsize=18)
 
     ax = plotter.draw(
         "x",
@@ -381,7 +369,7 @@ def plot_mu_scan_results_multimass(
         yerrloattrib="yerrlo",
         yerrhiattrib="yerrhi",
         xlabel=xlabel,
-        ylabel=r"$\mu\,(\%)$",
+        ylabel=r"$\hat{\mu}\,(\%)$",
         ymin=2e-5,
         ymax=0.1,
         logx=True,
@@ -456,12 +444,12 @@ def plot_event_feature_distribution(dfs, misc, plot_options, output_path):
 
     with PdfPages(output_path) as pdf:
         for feature in columns:
-            axis = plotter.draw(
+            plotter.draw(
                 feature,
                 logy=False,
                 bins=np.linspace(
-                    dfs["background"][feature].min(),
-                    dfs["background"][feature].max(),
+                    dfs["Background"][feature].min(),
+                    dfs["Background"][feature].max(),
                     101,
                 ),
                 unit="GeV",
@@ -470,6 +458,6 @@ def plot_event_feature_distribution(dfs, misc, plot_options, output_path):
                 xlabel=feature,
             )
             # axis.set_title(f"{feature} distribution", fontsize=18)
-            axis.set_ylim(0, 0.25)
+            # axis.set_ylim(0, 0.25)
             pdf.savefig(bbox_inches="tight")
             plt.close()

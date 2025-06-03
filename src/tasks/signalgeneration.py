@@ -284,10 +284,9 @@ class SignalGenerationPlot(
             label_signals_1: generated_m1m2_df_index7,
             label_signals_2: generated_m1m2_df_index8,
             label_signals_3: generated_m1m2_df_index10,
-            "background": bkg_m1m2_df,
-            "real signals": real_sig_m1m2_df,
-
-        }      
+            "Background": bkg_m1m2_df,
+            "Real signal": real_sig_m1m2_df,
+        }
 
         plot_options = {
             label_signals_1: {
@@ -311,7 +310,7 @@ class SignalGenerationPlot(
                     "lw": 2,
                 }
             },
-            "background": {
+            "Background": {
                 "styles": {
                     "color": "black",
                     "histtype": "stepfilled",
@@ -320,7 +319,7 @@ class SignalGenerationPlot(
                     "lw": 2,
                 }
             },
-            "real signals": {
+            "Real signal": {
                 "styles": {
                     "color": "red",
                     "histtype": "stepfilled",

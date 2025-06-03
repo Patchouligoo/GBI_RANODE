@@ -345,6 +345,14 @@ class ScanMultiModelsOverTrueMuEnsembleAvg(
 
         misc["num_ensemble"] = self.num_ensemble
 
+        label_map = {
+            "true": "Truth",
+            "modelB_inSB": "model B trained in SB",
+            "modelB_inSR": "model B trained in SR",
+            "modelB_genData": "model B generates data",
+        }
+        misc["label_map"] = label_map
+
         self.output().parent.touch()
         output_path = self.output().path
 
@@ -409,6 +417,13 @@ class ScanMultiMassOverTrueMuEnsembleAvg(
             misc = avg_scan_info["misc"]
 
         misc["num_ensemble"] = self.num_ensemble
+
+        label_map = {
+            "true": "Truth",
+            "100, 500": "mx=100 GeV, my=500 GeV",
+            "300, 300": "mx=300 GeV, my=300 GeV",
+        }
+        misc["label_map"] = label_map
 
         self.output().parent.touch()
         output_path = self.output().path
