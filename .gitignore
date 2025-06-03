@@ -3,3 +3,5 @@ batch_submit.sh
 __pycache__/
 .law
 .config
+*.ipynb
+.ipynb_checkpoints
