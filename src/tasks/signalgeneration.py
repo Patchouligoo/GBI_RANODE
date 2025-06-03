@@ -32,10 +32,8 @@ from src.tasks.rnodetemplate import (
 )
 
 
-class ProcessAllSignals(
-    BaseTask
-):
-    
+class ProcessAllSignals(BaseTask):
+
     mx = luigi.IntParameter(default=100)
     my = luigi.IntParameter(default=500)
 
@@ -44,12 +42,12 @@ class ProcessAllSignals(
             f"mx_{self.mx}",
             f"my_{self.my}",
         )
-    
+
     def output(self):
         return {
             "signals": self.local_target("reprocessed_signals.npy"),
         }
-    
+
     @law.decorator.safe_output
     def run(self):
         data_dir = os.environ.get("DATA_DIR")
@@ -57,6 +55,7 @@ class ProcessAllSignals(
         data_path = f"{data_dir}/extra_raw_lhco_samples/events_anomalydetection_Z_XY_qq_parametric.h5"
 
         from src.data_prep.signal_processing import process_raw_signals
+
         self.output()["signals"].parent.touch()
         output_path = self.output()["signals"].path
         process_raw_signals(data_path, output_path, self.mx, self.my)
@@ -82,8 +81,8 @@ class SignalGeneration(
     num_ensembles = luigi.IntParameter(default=5)
 
     def store_parts(self):
-      w_test_value = self.w_range[self.w_test_index]
-      return super().store_parts() + (
+        w_test_value = self.w_range[self.w_test_index]
+        return super().store_parts() + (
             f"mx_{self.mx}",
             f"my_{self.my}",
             f"num_ensembles_{self.num_ensembles}",
@@ -96,8 +95,11 @@ class SignalGeneration(
         for ensemble_index in range(self.num_ensembles):
             model_results_ensemble_i = {}
             for index in range(self.train_num_sig_templates):
-                model_results_ensemble_i[f"model_seed_{index}"] = ScanRANODEFixedSeed.req(
-                    self, train_random_seed=index,
+                model_results_ensemble_i[f"model_seed_{index}"] = (
+                    ScanRANODEFixedSeed.req(
+                        self,
+                        train_random_seed=index,
+                    )
                 )
 
             model_results[f"ensemble_{ensemble_index}"] = model_results_ensemble_i
@@ -126,12 +128,18 @@ class SignalGeneration(
         for ensemble_index in range(self.num_ensembles):
             model_results_ensemble_i = model_results[f"ensemble_{ensemble_index}"]
             for model_rand_index in range(self.train_num_sig_templates):
-                model_results_ensemble_i_seed_j_path = model_results_ensemble_i[f"model_seed_{model_rand_index}"][
-                    "model_list"
-                ].path
-                model_results_ensemble_i_seed_j = json.load(open(model_results_ensemble_i_seed_j_path, "r"))
+                model_results_ensemble_i_seed_j_path = model_results_ensemble_i[
+                    f"model_seed_{model_rand_index}"
+                ]["model_list"].path
+                model_results_ensemble_i_seed_j = json.load(
+                    open(model_results_ensemble_i_seed_j_path, "r")
+                )
 
-                model_list.append(model_results_ensemble_i_seed_j[f"scan_index_{self.w_test_index}"][0])
+                model_list.append(
+                    model_results_ensemble_i_seed_j[f"scan_index_{self.w_test_index}"][
+                        0
+                    ]
+                )
 
         # generated events using each model
         num_models = len(model_list)
@@ -179,7 +187,7 @@ class SignalGenerationPlot(
     WScanMixin,
     BaseTask,
 ):
-    
+
     num_generated_sigs = luigi.IntParameter(default=1000000)
 
     mx = luigi.IntParameter(default=100)
@@ -187,7 +195,7 @@ class SignalGenerationPlot(
     num_ensembles = luigi.IntParameter(default=10)
 
     def store_parts(self):
-      return super().store_parts() + (
+        return super().store_parts() + (
             f"mx_{self.mx}",
             f"my_{self.my}",
             f"num_ensembles_{self.num_ensembles}",
@@ -196,9 +204,15 @@ class SignalGenerationPlot(
     def requires(self):
         return {
             "generated_signals": {
-                "s_ratio_index_7": SignalGeneration.req(self, s_ratio_index=7, w_test_index=13),
-                "s_ratio_index_8": SignalGeneration.req(self, s_ratio_index=8, w_test_index=14),
-                "s_ratio_index_10": SignalGeneration.req(self, s_ratio_index=10, w_test_index=15),
+                "s_ratio_index_7": SignalGeneration.req(
+                    self, s_ratio_index=7, w_test_index=13
+                ),
+                "s_ratio_index_8": SignalGeneration.req(
+                    self, s_ratio_index=8, w_test_index=14
+                ),
+                "s_ratio_index_10": SignalGeneration.req(
+                    self, s_ratio_index=10, w_test_index=15
+                ),
             },
             "bkg_events": ProcessBkg.req(self),
             "real_sig": ProcessAllSignals.req(self),
@@ -240,17 +254,35 @@ class SignalGenerationPlot(
         real_sig_df = pd.DataFrame(real_sig_events, columns=feature_list)
 
         # load the generated events with index 7
-        generated_file_index7 = self.input()["generated_signals"]["s_ratio_index_7"].path
-        generated_events_index_7 = np.load(generated_file_index7)[:, :-1]  # remove the label column
-        generated_df_index7 = pd.DataFrame(generated_events_index_7, columns=feature_list)
+        generated_file_index7 = self.input()["generated_signals"][
+            "s_ratio_index_7"
+        ].path
+        generated_events_index_7 = np.load(generated_file_index7)[
+            :, :-1
+        ]  # remove the label column
+        generated_df_index7 = pd.DataFrame(
+            generated_events_index_7, columns=feature_list
+        )
         # load the generated events with index 8
-        generated_file_index8 = self.input()["generated_signals"]["s_ratio_index_8"].path
-        generated_events_index_8 = np.load(generated_file_index8)[:, :-1]  # remove the label column
-        generated_df_index8 = pd.DataFrame(generated_events_index_8, columns=feature_list)
+        generated_file_index8 = self.input()["generated_signals"][
+            "s_ratio_index_8"
+        ].path
+        generated_events_index_8 = np.load(generated_file_index8)[
+            :, :-1
+        ]  # remove the label column
+        generated_df_index8 = pd.DataFrame(
+            generated_events_index_8, columns=feature_list
+        )
         # load the generated events with index 9
-        generated_file_index10 = self.input()["generated_signals"]["s_ratio_index_10"].path
-        generated_events_index_10 = np.load(generated_file_index10)[:, :-1]  # remove the label column
-        generated_df_index10 = pd.DataFrame(generated_events_index_10, columns=feature_list)
+        generated_file_index10 = self.input()["generated_signals"][
+            "s_ratio_index_10"
+        ].path
+        generated_events_index_10 = np.load(generated_file_index10)[
+            :, :-1
+        ]  # remove the label column
+        generated_df_index10 = pd.DataFrame(
+            generated_events_index_10, columns=feature_list
+        )
 
         # make m1m2 plots
         bkg_mjmin = bkg_df["mjmin"].values
@@ -264,21 +296,54 @@ class SignalGenerationPlot(
         real_sig_m1m2_df = pd.DataFrame(real_sig_m1m2, columns=[r"$m_{J}$"])
 
         generated_mjmin_index7 = generated_df_index7["mjmin"].values
-        generated_mjmax_index7 = generated_df_index7["mjmax - mjmin"].values + generated_mjmin_index7
-        generated_m1m2_index7 = np.concatenate([generated_mjmin_index7, generated_mjmax_index7], axis=0) * 1000
-        generated_m1m2_df_index7 = pd.DataFrame(generated_m1m2_index7, columns=[r"$m_{J}$"])
+        generated_mjmax_index7 = (
+            generated_df_index7["mjmax - mjmin"].values + generated_mjmin_index7
+        )
+        generated_m1m2_index7 = (
+            np.concatenate([generated_mjmin_index7, generated_mjmax_index7], axis=0)
+            * 1000
+        )
+        generated_m1m2_df_index7 = pd.DataFrame(
+            generated_m1m2_index7, columns=[r"$m_{J}$"]
+        )
         generated_mjmin_index8 = generated_df_index8["mjmin"].values
-        generated_mjmax_index8 = generated_df_index8["mjmax - mjmin"].values + generated_mjmin_index8
-        generated_m1m2_index8 = np.concatenate([generated_mjmin_index8, generated_mjmax_index8], axis=0) * 1000
-        generated_m1m2_df_index8 = pd.DataFrame(generated_m1m2_index8, columns=[r"$m_{J}$"])
+        generated_mjmax_index8 = (
+            generated_df_index8["mjmax - mjmin"].values + generated_mjmin_index8
+        )
+        generated_m1m2_index8 = (
+            np.concatenate([generated_mjmin_index8, generated_mjmax_index8], axis=0)
+            * 1000
+        )
+        generated_m1m2_df_index8 = pd.DataFrame(
+            generated_m1m2_index8, columns=[r"$m_{J}$"]
+        )
         generated_mjmin_index10 = generated_df_index10["mjmin"].values
-        generated_mjmax_index10 = generated_df_index10["mjmax - mjmin"].values + generated_mjmin_index10
-        generated_m1m2_index10 = np.concatenate([generated_mjmin_index10, generated_mjmax_index10], axis=0) * 1000
-        generated_m1m2_df_index10 = pd.DataFrame(generated_m1m2_index10, columns=[r"$m_{J}$"])
+        generated_mjmax_index10 = (
+            generated_df_index10["mjmax - mjmin"].values + generated_mjmin_index10
+        )
+        generated_m1m2_index10 = (
+            np.concatenate([generated_mjmin_index10, generated_mjmax_index10], axis=0)
+            * 1000
+        )
+        generated_m1m2_df_index10 = pd.DataFrame(
+            generated_m1m2_index10, columns=[r"$m_{J}$"]
+        )
 
-        label_signals_1 = rf"signals learned at $\mu$ = {conversion[7]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[13]*100:.3f}%"
-        label_signals_2 = rf"signals learned at $\mu$ = {conversion[8]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[14]*100:.3f}%"
-        label_signals_3 = rf"signals learned at $\mu$ = {conversion[10]*100:.3f}%" + "\n" + rf"predicted $\mu$={self.w_range[15]*100:.3f}%"
+        label_signals_1 = (
+            rf"Signal learned at $\mu$ = {conversion[7]*100:.3f}%"
+            + "\n"
+            + rf"predicted $\mu$={self.w_range[13]*100:.3f}%"
+        )
+        label_signals_2 = (
+            rf"Signal learned at $\mu$ = {conversion[8]*100:.3f}%"
+            + "\n"
+            + rf"predicted $\mu$={self.w_range[14]*100:.3f}%"
+        )
+        label_signals_3 = (
+            rf"Signal learned at $\mu$ = {conversion[10]*100:.3f}%"
+            + "\n"
+            + rf"predicted $\mu$={self.w_range[15]*100:.3f}%"
+        )
 
         m1m2_dfs = {
             label_signals_1: generated_m1m2_df_index7,

@@ -178,7 +178,7 @@ class ScanOverTrueMuEnsembleAvg(
     BkgModelMixin,
     BaseTask,
 ):
-    
+
     mx = luigi.IntParameter(default=100)
     my = luigi.IntParameter(default=500)
 
@@ -190,19 +190,19 @@ class ScanOverTrueMuEnsembleAvg(
             f"my_{self.my}",
             f"num_ensemble_{self.num_ensemble}",
         )
-    
+
     def requires(self):
         return [
             ScanOverTrueMu.req(self, ensemble=index)
             for index in range(1, self.num_ensemble + 1)
         ]
-    
+
     def output(self):
         return {
             "plot": self.local_target("ensemble_avg_scan_plot.pdf"),
             "plot_info": self.local_target("ensemble_avg_plot_info.json"),
         }
-    
+
     @law.decorator.safe_output
     def run(self):
 
@@ -235,15 +235,9 @@ class ScanOverTrueMuEnsembleAvg(
         ensemble_averaged_pred_yerrhi_log = np.mean(pred_yerrhi, axis=0)
 
         ensemble_averaged_pred_y = np.power(10, ensemble_averaged_pred_y_log)
-        ensemble_averaged_pred_yerrlo = np.power(
-            10,
-            ensemble_averaged_pred_yerrlo_log
-        ) 
+        ensemble_averaged_pred_yerrlo = np.power(10, ensemble_averaged_pred_yerrlo_log)
         ensemble_averaged_pred_yerrlo[mask_nan_inlo] = 0
-        ensemble_averaged_pred_yerrhi = np.power(
-            10,
-            ensemble_averaged_pred_yerrhi_log
-        )
+        ensemble_averaged_pred_yerrhi = np.power(10, ensemble_averaged_pred_yerrhi_log)
 
         dfs = {
             "true": pd.DataFrame(
@@ -291,9 +285,7 @@ class ScanOverTrueMuEnsembleAvg(
             json.dump(plot_info, f, cls=NumpyEncoder)
 
 
-class ScanMultiModelsOverTrueMuEnsembleAvg(
-    ScanOverTrueMuEnsembleAvg
-):
+class ScanMultiModelsOverTrueMuEnsembleAvg(ScanOverTrueMuEnsembleAvg):
 
     def requires(self):
         return {
@@ -374,10 +366,18 @@ class ScanMultiMassOverTrueMuEnsembleAvg(
     def requires(self):
         return {
             "100, 500": ScanOverTrueMuEnsembleAvg.req(
-                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=False, mx=100, my=500
+                self,
+                use_perfect_bkg_model=False,
+                use_bkg_model_gen_data=False,
+                mx=100,
+                my=500,
             ),
             "300, 300": ScanOverTrueMuEnsembleAvg.req(
-                self, use_perfect_bkg_model=False, use_bkg_model_gen_data=False, mx=300, my=300
+                self,
+                use_perfect_bkg_model=False,
+                use_bkg_model_gen_data=False,
+                mx=300,
+                my=300,
             ),
         }
 
