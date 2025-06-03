@@ -357,22 +357,22 @@ class SignalGenerationPlot(
             label_signals_1: {
                 "styles": {
                     "color": "green",
-                    "ls": "-",
-                    "lw": 4,
+                    "linestyle": "-",
+                    "linewidth": 4,
                 }
             },
             label_signals_2: {
                 "styles": {
                     "color": "blue",
-                    "ls": "-",
-                    "lw": 3,
+                    "linestyle": "-",
+                    "linewidth": 3,
                 }
             },
             label_signals_3: {
                 "styles": {
                     "color": "orange",
-                    "ls": "-",
-                    "lw": 2,
+                    "linestyle": "-",
+                    "linewidth": 2,
                 }
             },
             "Background": {
@@ -380,8 +380,8 @@ class SignalGenerationPlot(
                     "color": "black",
                     "histtype": "stepfilled",
                     "alpha": 0.2,
-                    "ls": "-",
-                    "lw": 2,
+                    "linestyle": "-",
+                    "linewidth": 2,
                 }
             },
             "Real signal": {
@@ -389,8 +389,8 @@ class SignalGenerationPlot(
                     "color": "red",
                     "histtype": "stepfilled",
                     "alpha": 0.2,
-                    "ls": "-",
-                    "lw": 2,
+                    "linestyle": "-",
+                    "linewidth": 2,
                 }
             },
         }
