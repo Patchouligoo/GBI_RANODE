@@ -1,6 +1,6 @@
 # GBI RANODE
 
-This part of the code corresponds to the RANODE section in the paper ["Generator Based Inference (GBI)"](https://arxiv.org/abs/2405.08889) by Chi Lung Cheng, Ranit Das, Runze Li, Radha Mastandrea, Vinicius Mikuni, Benjamin Nachman, David Shih and Gup Singh.
+This part of the code corresponds to the RANODE section in the paper ["Generator Based Inference (GBI)"](https://arxiv.org/abs/2506.00119) by Chi Lung Cheng, Ranit Das, Runze Li, Radha Mastandrea, Vinicius Mikuni, Benjamin Nachman, David Shih and Gup Singh.
 
 ## Installation
 
@@ -26,7 +26,7 @@ During first executation, user will be prompted to enter the input and output di
 - Signal ensembles with trainvaltest splitting : lumi_matched_train_val_test_split_signal_features_W_qq.h5
 
 
-### Tutorials
+## Tutorials
 
 ["Luigi Analysis Workflow (LAW)"](https://github.com/riga/law) is used to construct this project. First, one needs to setup the law task list by running
 ```
@@ -42,7 +42,7 @@ After this different tasks can be run with law by commands like:
 law run taskname --version output_postfix --flags XXX
 ```
 
-### Command Line Interface
+## Command Line Interface
 
 To get likelihood scanning plot at one signal injection strength, one can run:
 ```
