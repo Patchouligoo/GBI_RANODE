@@ -22,4 +22,4 @@ dependencies:
     - luigi==3.6.0
     - scinum==2.2.0
     - nflows==0.14
-    - quickstats==0.8.3.5.9
+    - quickstats==0.8.3.6
