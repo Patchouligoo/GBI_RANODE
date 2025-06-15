@@ -152,30 +152,65 @@ def plot_mu_scan_results_multimodels(
 ):
 
     # -------------------- plotting settings --------------------
-    colors = get_cmap("simple_contrast").colors
+    colors = get_cmap("atlas_hh").colors
+    # styles = {
+    #     "plot": {"marker": "o"},
+    #     "legend": {"fontsize": 18},
+    #     "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
+    # }
     styles = {
-        "plot": {"marker": "o"},
-        "legend": {"fontsize": 18},
+        "plot": {"marker": "o", "markersize": 10, "markeredgecolor": "k"},
+        "legend": {
+            "fontsize": 16,
+            # "columnspacing": 0.8,
+            # "borderaxespad": 0.5,
+            # "handleheight": 1.5,
+            # "handlelength": 2.5,
+        },
         "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
     }
     styles_map = {
         "true": {
-            "plot": {"color": "hdbs:spacecadet"},
+            "plot": {"color": colors[4]},
             "fill_between": {"color": "none"},
+        },
+        "modelB_inSR": {
+            "plot": {"color": colors[2]},
+            "fill_between": {
+                "facecolor": get_rgba(colors[2], 0.2),
+                "alpha": None,
+                "edgecolor": get_rgba(colors[2], 0.9),
+            },
+        },
+        "modelB_genData": {
+            "plot": {"color": colors[3]},
+            "fill_between": {
+                "facecolor": get_rgba(colors[3], 0.2),
+                "alpha": None,
+                "edgecolor": get_rgba(colors[3], 0.9),
+            },
+        },
+        "modelB_inSB": {
+            "plot": {"color": colors[1]},
+            "fill_between": {
+                "facecolor": get_rgba(colors[1], 0.2),
+                "alpha": None,
+                "edgecolor": get_rgba(colors[1], 0.9),
+            },
         },
     }
 
     key_list = [key for key in dfs.keys() if key != "true"]
 
-    for index, key in enumerate(key_list):
-        styles_map[key] = {
-            "plot": {"color": colors[index]},
-            "fill_between": {
-                "facecolor": get_rgba(colors[index], 0.2),
-                "alpha": None,
-                "edgecolor": get_rgba(colors[index], 0.9),
-            },
-        }
+    # for index, key in enumerate(key_list):
+    #     styles_map[key] = {
+    #         "plot": {"color": colors[index + 1]},
+    #         "fill_between": {
+    #             "facecolor": get_rgba(colors[index + 1], 0.2),
+    #             "alpha": None,
+    #             "edgecolor": get_rgba(colors[index + 1], 0.9),
+    #         },
+    #     }
 
     config = {
         "error_on_top": False,
@@ -222,7 +257,7 @@ def plot_mu_scan_results_multimodels(
         logx=True,
         logy=True,
         offset_error=False,
-        # legend_order=["true", "predicted"],
+        legend_order=["true", "modelB_genData", "modelB_inSR", "modelB_inSB"],
     )
 
     ax.set_xticks(xticks)
@@ -316,30 +351,42 @@ def plot_mu_scan_results_multimass(
 ):
 
     # -------------------- plotting settings --------------------
-    colors = get_cmap("simple_contrast").colors
+    colors = get_cmap("atlas_hh").colors
     styles = {
-        "plot": {"marker": "o"},
-        "legend": {"fontsize": 18},
+        "plot": {"marker": "o", "markersize": 10, "markeredgecolor": "k"},
+        "legend": {
+            "fontsize": 16,
+            # "columnspacing": 0.8,
+            # "borderaxespad": 0.5,
+            # "handleheight": 1.5,
+            # "handlelength": 2.5,
+        },
         "ratio_frame": {"height_ratios": (2, 1), "hspace": 0.05},
     }
     styles_map = {
         "true": {
-            "plot": {"color": "hdbs:spacecadet"},
+            "plot": {"color": colors[4]},
             "fill_between": {"color": "none"},
+        },
+        "300, 300": {
+            "plot": {"color": colors[2]},
+            "fill_between": {
+                "facecolor": get_rgba(colors[2], 0.2),
+                "alpha": None,
+                "edgecolor": get_rgba(colors[2], 0.9),
+            },
+        },
+        "100, 500": {
+            "plot": {"color": colors[1]},
+            "fill_between": {
+                "facecolor": get_rgba(colors[1], 0.2),
+                "alpha": None,
+                "edgecolor": get_rgba(colors[1], 0.9),
+            },
         },
     }
 
     key_list = [key for key in dfs.keys() if key != "true"]
-
-    for index, key in enumerate(key_list):
-        styles_map[key] = {
-            "plot": {"color": colors[index]},
-            "fill_between": {
-                "facecolor": get_rgba(colors[index], 0.2),
-                "alpha": None,
-                "edgecolor": get_rgba(colors[index], 0.9),
-            },
-        }
 
     config = {
         "error_on_top": False,
@@ -375,7 +422,7 @@ def plot_mu_scan_results_multimass(
         logx=True,
         logy=True,
         offset_error=False,
-        # legend_order=["true", "predicted"],
+        legend_order=["true", "300, 300", "100, 500"],
     )
 
     ax.set_xticks(xticks)

@@ -69,6 +69,9 @@ class ScanOverTrueMu(
     scan_index = luigi.ListParameter(
         default=[
             1,  # 0.01%
+            # 2,  # 0.02%
+            # 3,
+            # 4,
             5,  # 0.10%
             6,  # 0.17%
             7,  # 0.30%
@@ -339,9 +342,9 @@ class ScanMultiModelsOverTrueMuEnsembleAvg(ScanOverTrueMuEnsembleAvg):
 
         label_map = {
             "true": "Truth",
-            "modelB_inSB": "model B trained in SB",
-            "modelB_inSR": "model B trained in SR",
-            "modelB_genData": "model B generates data",
+            "modelB_inSB": "Model B trained in SB",
+            "modelB_inSR": "Model B trained in SR",
+            "modelB_genData": "Use model B to generate data",
         }
         misc["label_map"] = label_map
 
