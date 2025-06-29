@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import json
 from tqdm import tqdm
 from array import array
@@ -9,7 +10,7 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel, R
 from scipy.optimize import fmin_l_bfgs_b
 from src.utils.utils import NumpyEncoder
 from src.utils.utils import find_zero_crossings
-
+from quickstats.plots import General1DPlot
 
 def fit_likelihood(
     x_values,
@@ -242,55 +243,114 @@ def bootstrap_and_fit(
     if mu_left <= 10**x_pred[0]:
         mu_left = 0
 
-    # make plots
-    f = plt.figure()
+    # # make plots
+    # f = plt.figure()
 
-    plt.scatter(x_values.flatten(), y_values, label="test points", color="black")
-    plt.errorbar(
-        x_values.flatten(),
-        y_values,
-        yerr=log_likelihood_nominal_std,
-        fmt="o",
-        color="black",
-    )
+    # plt.scatter(x_values.flatten(), y_values, label="test points", color="black")
+    # plt.errorbar(
+    #     x_values.flatten(),
+    #     y_values,
+    #     yerr=log_likelihood_nominal_std,
+    #     fmt="o",
+    #     color="black",
+    # )
 
-    plt.plot(x_pred, y_pred, label="fit func", color="red")
-    plt.fill_between(
-        x_pred, y_pred_lower_bound, y_pred_upper_bound, alpha=0.2, color="red"
-    )
+    # plt.plot(x_pred, y_pred, label="fit func", color="red")
+    # plt.fill_between(
+    #     x_pred, y_pred_lower_bound, y_pred_upper_bound, alpha=0.2, color="red"
+    # )
 
-    # plot 95% CI and the peak
-    plt.scatter(
-        [max_likelihood_w_log],
-        [max_likelihood],
-        color="red",
-        label=f"peak $\mu$ {max_likelihood_w:.4f}",
-    )  # peak w value
-    plt.axhline(
-        y=CI95_likelihood,
-        color="blue",
-        linestyle="--",
-        label=f"95% CI, [{mu_left:.4f}, {mu_right:.4f}]",
-    )
+    # # plot 95% CI and the peak
+    # plt.scatter(
+    #     [max_likelihood_w_log],
+    #     [max_likelihood],
+    #     color="red",
+    #     label=f"peak $\mu$ {max_likelihood_w:.4f}",
+    # )  # peak w value
+    # plt.axhline(
+    #     y=CI95_likelihood,
+    #     color="blue",
+    #     linestyle="--",
+    #     label=f"95% CI, [{mu_left:.4f}, {mu_right:.4f}]",
+    # )
 
-    plt.axvline(
-        x=np.log10(mu_true),
-        color="black",
-        linestyle="--",
-        label=f"true $\mu$ {mu_true:.4f}",
-    )
+    # plt.axvline(
+    #     x=np.log10(mu_true),
+    #     color="black",
+    #     linestyle="--",
+    #     label=f"true $\mu$ {mu_true:.4f}",
+    # )
 
-    plt.title(f"Likelihood fit at true $\mu$ {mu_true:.4f}")
+    # plt.title(f"Likelihood fit at true $\mu$ {mu_true:.4f}")
 
-    plt.xlabel("$log_{10}(\mu)$")
+    # plt.xlabel("$log_{10}(\mu)$")
 
-    # <log likelihood>_perevent
-    plt.ylabel("$<log(L)>_{event}$")
+    # # <log likelihood>_perevent
+    # plt.ylabel("$<log(L)>_{event}$")
 
-    plt.tight_layout()
+    # plt.tight_layout()
 
-    plt.legend()
-    plt.savefig(output_dir["scan_plot"].path)
+    # plt.legend()
+    # plt.savefig(output_dir["scan_plot"].path)
+    # plt.close()
+
+    dfs = {
+        'Data': pd.DataFrame({"x": x_values.flatten(), "y": y_values, "yerrlo": y_values - log_likelihood_nominal_std, "yerrhi": y_values + log_likelihood_nominal_std}),
+        'Fit': pd.DataFrame({"x": x_pred, "y": y_pred, "yerrlo": y_pred_lower_bound, "yerrhi": y_pred_upper_bound}),
+    }
+    config_map = {
+        "Data": {
+            "error_format": "errorbar"
+        },
+        "Fit": {
+            "error_format": "fill"
+        }
+    }
+    styles_map = {
+        "Data": {
+            "plot": {
+                "ls": "none",
+            },
+            "errorbar": {
+                "color": "black",
+            }
+        },
+        "Fit": {
+                "plot": {
+                    "marker": "none",
+                    "color": "red",
+                },
+                "fill_between": {
+                    "color": "red",
+                    "alpha": 0.2,
+                }
+            }
+    }
+
+    styles = {
+        'legend': {
+            # 'loc': (0.05, 0.75),
+            'fontsize': 15
+        }
+    }
+    plotter  = General1DPlot(dfs, styles_map=styles_map, config_map=config_map, styles=styles)
+    plotter.add_vline(x=np.log10(mu_true), label=r"$\mathit{\mu}_{\text{inj}}$ = " + f"{mu_true:.4f}", color="black", linestyle="--")
+    plotter.add_hline(y=CI95_likelihood, label=r"95% CI $\in$" + f" [{mu_left:.4f}, {mu_right:.4f}]", color="blue", linestyle="--")
+    plotter.add_point(x=max_likelihood_w_log, y=max_likelihood, label=r"$\hat{\mathit{\mu}}$ = " + f"{max_likelihood_w:.4f}", color="red")
+    plotter.draw('x', 'y', 'yerrlo', 'yerrhi', 
+                 xlabel=r"$log_{10}(\mathit{\mu})$", 
+                 ylabel=r"$\langle log(L) \rangle$", 
+                 logy=False,
+                 legend_order=[
+                     'Data', 
+                     r"$\hat{\mathit{\mu}}$ = " + f"{max_likelihood_w:.4f}",
+                     'Fit', 
+                     r"$\mathit{\mu}_{\text{inj}}$ = " + f"{mu_true:.4f}",
+                     r"95% CI $\in$" + f" [{mu_left:.4f}, {mu_right:.4f}]"
+                    ],
+                )
+    
+    plt.savefig(output_dir["scan_plot"].path, bbox_inches="tight")
     plt.close()
 
     output_info = {
